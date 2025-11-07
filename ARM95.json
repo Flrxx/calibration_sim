@@ -1,0 +1,192 @@
+{
+  "joint_limits_general_h": [
+    1.57,
+    1.03,
+    2.25,
+    1.57,
+    1.90,
+    3.14
+  ],
+  "joint_limits_general_l": [
+    -1.57,
+    -1.03,
+    -2.25,
+    -1.57,
+    -1.90,
+    -3.14
+  ],
+  "joint_limits_circle_h": [
+    1.57,
+    1,
+    2.26,
+    3.14,
+    2.07,
+    3.14
+  ],
+  "joint_limits_circle_l": [
+    -1.57,
+    -1,
+    -2.26,
+    -3.14,
+     1.75,
+    -3.14
+  ],
+  "cartesian_limits": [
+    [
+      -0.5,
+      0.5
+    ],
+    [
+      -0.5,
+      0.5
+    ],
+    [
+      0.17,
+      0.7
+    ]
+  ],
+  "nominal_dh": [
+    [
+      0,
+      1.5708,
+      0,
+      3.14,
+      0
+    ],
+    [
+      0.46,
+      0,
+      0,
+      1.5708,
+      1
+    ],
+    [
+      0.38,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      0,
+      -1.5708,
+      -0.135,
+      -1.5708,
+      0
+    ],
+    [
+      0,
+      -1.5708,
+      0.109,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0.176,
+      0,
+      0
+    ]
+  ],
+  "nominal_base_params": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "nominal_tool_params": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "real_dh": [
+    [
+      0.002,
+      1.56,
+      0.153,
+      1.5,
+      0
+    ],
+    [
+      0.465,
+      0.005,
+      0.003,
+      1.55,
+      1
+    ],
+    [
+      0.269,
+      0.001,
+      0.001,
+      0.004,
+      1
+    ],
+    [
+      0.001,
+      -1.57,
+      -0.17,
+      -1.6,
+      0
+    ],
+    [
+      -0.003,
+      -1.58,      
+      0.122,
+      0.02,
+      0
+    ],
+    [
+      0.005,
+      0.01,
+      0.0984,
+     -0.015,
+      0
+    ]
+  ],
+  "real_base_params": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "real_tool_params": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "zero_tracker_position": [
+    0.007356013595942512,
+    1.3712003613502324,
+    2.6004491243440655
+  ],
+  "cube": {
+    "side": 0.3,
+    "bottom_center_pose": [
+      0.3,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "max_z_angle": 3.14,
+  "optimization_method": "levenberg_marquardt",
+  "dataset_file": "data_ar_95_extra_merged.csv",
+  "base_circles_dataset_file": "base_circles_ar_95.csv",
+  "tool_circles_dataset_file": "tool_circles_ar_95.csv",
+  "results_file": "results.json",
+  "general_samples_number": 100,
+  "circle_samples_number": 50
+}
