@@ -4,11 +4,14 @@ from math import cos, sin, pi, sqrt, atan2, asin, log10, acos, copysign
 from typing import Union
 from math_routines import x_rot, y_rot, z_rot, arbitrary_axis_rot, trans
 from robotic_transformations import dh_trans, hayati_trans
+import plotting 
 import pygame
 import joystick 
 import argparse
 import json
 import time
+import ctypes
+import multiprocessing as mp
 
 class HayatiModel:
     def __init__(self, config):
@@ -92,42 +95,68 @@ class HayatiModel:
             main_tf = main_tf @ tf
         return main_tf @ tool
     
+
 def test(args):
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
     model = HayatiModel(config)
 
-    joystick_nominal = joystick.JointJoysticks(model.joint_limits_general_h, model.joint_limits_general_l, "Nominal")
-    #joystick_real = joystick.JointJoysticks(model.joint_limits_general_h, model.joint_limits_general_l, "Real")
+    running = mp.Value("i", 1)
+    angles_nominal = mp.Array(ctypes.c_float, 6)
+    angles_real = mp.Array(ctypes.c_float, 6)
+    # for i in range(6):
+    #     angles_nominal[i] = 0
+    #     angles_real[i] = 0
 
-    running = True
-    fig = plt.figure()
-    point, = ax.plot([0.1], [0.2], [0.3], 'ro', markersize=8)
+    #joints_joysticks = joystick.JointJoysticks(model.joint_limits_general_h, model.joint_limits_general_l, "Joints")
+    joystick_proc = mp.Process(target=plotting.joystick_process, args=(model.joint_limits_general_h, model.joint_limits_general_l, angles_nominal, angles_real, running))
+    joystick_proc.start()
 
-    plt.ion()  # Turn on interactive mode
-    plt.show()
-    ax = fig.add_subplot(111, projection='3d')
+    plot_display = plotting.Optimized3DPlot()
+    def on_key(event):
+        if event.key == 'r':
+            # Reset view
+            plot_display.ax.view_init(elev=20, azim=45)
+            plot_display.fig.canvas.draw()
+        elif event.key == 'c':
+            # Clear trajectories
+            plot_display.clear_trajectories()
+    
+    plot_display.fig.canvas.mpl_connect('key_press_event', on_key)
+    # Optimization: Update plot less frequently
+    plot_update_interval = 0.016 * 2  # ~60 FPS
+    last_update_time = time.time()
+
     while running:
-        joystick_nominal.draw_joint_joysticks()
-        #joystick_real.draw_joint_joysticks()
-        joystick_nominal.clock.tick(60)
-        #joystick_real.clock.tick(60)
+        # joints_joysticks.draw_joint_joysticks()
+        # joints_joysticks.clock.tick(60)
 
-        angles_nominal = joystick_nominal.get_all_joystick_values()
-        #angles_real = joystick_nominal.get_all_joystick_values()
+        # angles_nominal = joints_joysticks.get_nominal_joint_values()
+        # angles_real = joints_joysticks.get_real_joint_values()
 
         nom_trans_m = model.get_transition_matrix(angles_nominal, "nominal")
-        #real_trans_m = model.get_transition_matrix(angles_real, "real")
+        real_trans_m = model.get_transition_matrix(angles_real, "real")
 
         cart_nominal = [nom_trans_m[0][-1], nom_trans_m[1][-1], nom_trans_m[2][-1]]
-        #cart_real = real_trans_m[-1][0:4]
-        
-        ax.scatter(*cart_nominal, color='red', s=50)
-        plt.draw()
-        plt.pause(0.05)
-        #plt.close('all')
+        cart_real = [real_trans_m[0][-1], real_trans_m[1][-1], real_trans_m[2][-1]]
 
         print(f"Nominal: {cart_nominal}")
+        print(f"Real: {cart_real}")
+
+        #Throttle plot updates
+        current_time = time.time()
+        if current_time - last_update_time >= plot_update_interval:
+                
+            plot_display.update_plot_optimized(cart_nominal)
+            last_update_time = current_time
+            
+            # # Check if plot window is closed
+            # if not plt.fignum_exists(plot_display.fig.number):
+            #     shared_data.running.value = 0
+            #     break
+                
+            # Small sleep to prevent CPU spinning
+            time.sleep(0.001)
 
     pygame.quit()
 

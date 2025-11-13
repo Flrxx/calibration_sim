@@ -69,7 +69,7 @@ class LinearJoystick:
 class JointJoysticks:
     def __init__(self, joysticks_limits_h: list, joysticks_limits_l: list, name: str):
         pygame.init()
-        self.screen = pygame.display.set_mode((900, 900))
+        self.screen = pygame.display.set_mode((1800, 900))
         pygame.display.set_caption(name)
         self.clock = pygame.time.Clock()
         
@@ -86,6 +86,26 @@ class JointJoysticks:
                 joystick_i.update_knob_position_from_value()
             self.joysticks.append(joystick_i)
         self.font = pygame.font.Font(None, 36)
+        self.big_font = pygame.font.Font(None, 48)
+
+        # Create another 6 joysticks
+        for i in range(6):
+            x = 900
+            y = 100 + i * 120
+            width = 400
+            height = 30
+            joystick_i = LinearJoystick(x, y, width, height, [joysticks_limits_h[i], joysticks_limits_l[i]], i)
+            if(i == 2 or i == 4):
+                joystick_i.value = 1.57
+                joystick_i.update_knob_position_from_value()
+            self.joysticks.append(joystick_i)
+        self.font = pygame.font.Font(None, 36)
+        
+    def draw_labels(self, surface: pygame.Surface):
+        id_text = self.big_font.render(f"Nominal", True, (255, 255, 255))
+        surface.blit(id_text, (100, 25))
+        id_text = self.big_font.render(f"Real", True, (255, 255, 255))
+        surface.blit(id_text, (900, 25))
         
     def draw_joint_joysticks(self):
         for event in pygame.event.get():
@@ -97,21 +117,36 @@ class JointJoysticks:
         self.screen.fill((30, 30, 30))
         
         # Draw all joysticks
+        self.draw_labels(self.screen)
         for joystick in self.joysticks:
             joystick.draw(self.screen)
         
         # Display all current values
         current_values = self.get_all_joystick_values()
         y_offset = 100
+        x_offset = 0
+        i_offset = 0
         for i, value in enumerate(current_values):
-            value_text = self.font.render(f"Joint {i+1}: {value:.2f}", True, (255, 255, 255))
-            self.screen.blit(value_text, (600, y_offset + i * 30))
+            value_text = self.font.render(f"Joint {i+1 - i_offset}: {value:.2f}", True, (255, 255, 255))
+            self.screen.blit(value_text, (600 + x_offset, y_offset + (i - i_offset) * 30))
+            if(i == 5):
+                x_offset = 800
+                i_offset = 6
 
         pygame.display.flip()
+
 
     def get_all_joystick_values(self):
         """Returns a list of current values from all joysticks"""
         return [joystick.get_value() for joystick in self.joysticks]
+    
+    def get_nominal_joint_values(self):
+        """Returns a list of current values from all joysticks"""
+        return [joystick.get_value() for joystick in self.joysticks[:6]]
+    
+    def get_real_joint_values(self):
+        """Returns a list of current values from all joysticks"""
+        return [joystick.get_value() for joystick in self.joysticks[6:]]
 
     def get_joystick_limits(self):
         """Returns a list of limits for all joysticks"""
