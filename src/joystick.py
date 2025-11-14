@@ -69,7 +69,7 @@ class LinearJoystick:
 class JointJoysticks:
     def __init__(self, joysticks_limits_h: list, joysticks_limits_l: list, name: str):
         pygame.init()
-        self.screen = pygame.display.set_mode((1800, 900))
+        self.screen = pygame.display.set_mode((900, 900))
         pygame.display.set_caption(name)
         self.clock = pygame.time.Clock()
         
@@ -88,24 +88,24 @@ class JointJoysticks:
         self.font = pygame.font.Font(None, 36)
         self.big_font = pygame.font.Font(None, 48)
 
-        # Create another 6 joysticks
-        for i in range(6):
-            x = 900
-            y = 100 + i * 120
-            width = 400
-            height = 30
-            joystick_i = LinearJoystick(x, y, width, height, [joysticks_limits_h[i], joysticks_limits_l[i]], i)
-            if(i == 2 or i == 4):
-                joystick_i.value = 1.57
-                joystick_i.update_knob_position_from_value()
-            self.joysticks.append(joystick_i)
-        self.font = pygame.font.Font(None, 36)
+        # #Create another 6 joysticks
+        # for i in range(6):
+        #     x = 900
+        #     y = 100 + i * 120
+        #     width = 400
+        #     height = 30
+        #     joystick_i = LinearJoystick(x, y, width, height, [joysticks_limits_h[i], joysticks_limits_l[i]], i)
+        #     if(i == 2 or i == 4):
+        #         joystick_i.value = 1.57
+        #         joystick_i.update_knob_position_from_value()
+        #     self.joysticks.append(joystick_i)
+        # self.font = pygame.font.Font(None, 36)
         
-    def draw_labels(self, surface: pygame.Surface):
-        id_text = self.big_font.render(f"Nominal", True, (255, 255, 255))
-        surface.blit(id_text, (100, 25))
-        id_text = self.big_font.render(f"Real", True, (255, 255, 255))
-        surface.blit(id_text, (900, 25))
+    # def draw_labels(self, surface: pygame.Surface):
+    #     id_text = self.big_font.render(f"Nominal", True, (255, 255, 255))
+    #     surface.blit(id_text, (100, 25))
+    #     id_text = self.big_font.render(f"Real", True, (255, 255, 255))
+    #     surface.blit(id_text, (900, 25))
         
     def draw_joint_joysticks(self):
         for event in pygame.event.get():
@@ -117,7 +117,7 @@ class JointJoysticks:
         self.screen.fill((30, 30, 30))
         
         # Draw all joysticks
-        self.draw_labels(self.screen)
+        #self.draw_labels(self.screen)
         for joystick in self.joysticks:
             joystick.draw(self.screen)
         
@@ -152,15 +152,14 @@ class JointJoysticks:
         """Returns a list of limits for all joysticks"""
         return [joystick.limits for joystick in self.joysticks]
 
-def joystick_process(upper_limit: float, lower_limit: float, angles_nominal:list, angles_real:list, running: int):
-    joints_joysticks = JointJoysticks(upper_limit, lower_limit, "Joints")
+def joystick_process(upper_limit: float, lower_limit: float, angles_values:list, running: int, name:str):
+    joints_joysticks = JointJoysticks(upper_limit, lower_limit, name)
     while(running):
         joints_joysticks.draw_joint_joysticks()
         joints_joysticks.clock.tick(60)
         res = joints_joysticks.get_all_joystick_values()
         for i in range(6):
-            angles_nominal[i] = res[i]
-            angles_real[i] = res[i + 6]
+            angles_values[i] = res[i]
 
 # # Function that uses the joystick values
 # def process_joystick_data(joysticks):

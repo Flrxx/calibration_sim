@@ -10,15 +10,15 @@ import matplotlib
 import joystick 
 
 class ShowRobot:
-    def __init__(self):
+    def __init__(self, limits):
         plt.ion()
-        self.fig = plt.figure(figsize=(10, 8))
+        self.fig = plt.figure(figsize=(14, 10))
         self.ax = self.fig.add_subplot(111, projection='3d')
         
-        # Use deque for trajectory - it's simpler and works correctly
-        self.trajectory_max_points = 100
+        self.trajectory_max_points = 50  # Reduced for performance
         self.trajectory = deque(maxlen=self.trajectory_max_points)
-        
+
+        self.limits = limits 
         self.setup()
         
     def setup(self):
@@ -27,10 +27,10 @@ class ShowRobot:
         self.ax.set_zlabel('Z')
         
         # Set fixed limits
-        self.ax.set_xlim([-1, 1])
-        self.ax.set_ylim([-1, 1])
-        self.ax.set_zlim([-1, 1])
-        self.ax.set_box_aspect([1, 1, 1])
+        self.ax.set_xlim(self.limits[0])
+        self.ax.set_ylim(self.limits[1])
+        self.ax.set_zlim(self.limits[2])
+        #self.ax.set_box_aspect([1, 1, 1])
         
         # Disable some expensive features
         self.ax.grid(True, alpha=0.2)  # Lighter grid
@@ -38,19 +38,39 @@ class ShowRobot:
         self.ax.xaxis.pane.fill = False
         self.ax.yaxis.pane.fill = False
         self.ax.zaxis.pane.fill = False
+
+        # Initialize plots for all points
+        self.current_points = []
+        self.connection_lines = []
+
+        # Trajectory line
+        self.trajectory_line, = self.ax.plot([], [], [], "black", alpha=0.7, linewidth=1.5)
+
+        for i in range(8):
+            # Current points
+            point = self.ax.scatter([0], [0], [0], c='blue', 
+                                  s=80, marker='o', 
+                                  label=f'Point {i+1}')
+            self.current_points.append(point)
         
-        # Initialize plots with empty data
-        self.trajectory_line, = self.ax.plot([], [], [], 'b-', alpha=0.7, linewidth=1.5)
-        self.current_point = self.ax.scatter([0], [0], [0], c='red', s=80, marker='o')
+        # Connection lines between consecutive points
+        for i in range(7):  # 7 connections for 8 points
+            conn_line, = self.ax.plot([], [], [], 'blue', alpha=0.7, 
+                                    linewidth=2.0,
+                                    label=f'P{i+1}-P{i+2}' if i == 0 else "")
+            self.connection_lines.append(conn_line)
+        
+        # Add legend
+        #self.ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
         
         # Initial draw
         self.fig.canvas.draw()
         
-    def update_robot(self, data):
-        # Add new point to trajectory
-
-        self.trajectory.append(data)
+    def update_robot(self, points_coords):
         
+        # Update trajectory lines
+        self.trajectory.append(points_coords[-1])
+
         # Convert trajectory to numpy array for plotting
         if len(self.trajectory) > 1:
             traj_array = np.array(self.trajectory)
@@ -61,16 +81,30 @@ class ShowRobot:
             self.trajectory_line.set_data([], [])
             self.trajectory_line.set_3d_properties([])
         
-        # Update current point
-        self.current_point._offsets3d = ([data[0]], [data[1]], [data[2]])
+        # Update current points
+        for i in range(8):
+            x, y, z = points_coords[i]
+            self.current_points[i]._offsets3d = ([x], [y], [z])
         
-        # Update title
+        # Update connection lines between consecutive points
+        total_length = 0
+        for i in range(7):
+            x1, y1, z1 = points_coords[i]
+            x2, y2, z2 = points_coords[i + 1]
+            
+            self.connection_lines[i].set_data([x1, x2], [y1, y2])
+            self.connection_lines[i].set_3d_properties([z1, z2])
+            
+            # Calculate segment length
+            segment_length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
+            total_length += segment_length
+        
         if hasattr(self, 'last_title_update'):
             if time.time() - self.last_title_update > 0.2:  # Update title every 200ms
-                self.ax.set_title(f'X: {data[0]:.3f}, Y: {data[1]:.3f}, Z: {data[2]:.3f}')
+                self.ax.set_title(f'X: {points_coords[-1][0]:.3f}, Y: {points_coords[-1][1]:.3f}, Z: {points_coords[-1][2]:.3f}')
                 self.last_title_update = time.time()
         else:
-            self.ax.set_title(f'X: {data[0]:.3f}, Y: {data[1]:.3f}, Z: {data[2]:.3f}')
+            self.ax.set_title(f'X: {points_coords[-1][0]:.3f}, Y: {points_coords[-1][1]:.3f}, Z: {points_coords[-1][2]:.3f}')
             self.last_title_update = time.time()
         
         # Use blitting for faster updates
@@ -89,73 +123,3 @@ class ShowRobot:
     
     def close(self):
         plt.close(self.fig)
-
-
-
-# def main_optimized():
-#     """Optimized main process"""
-    
-#     # Use shared memory instead of queue
-#     shared_data = SharedData()
-    
-#     # Start joystick process
-#     joystick_proc = mp.Process(target=joystick.joystick_process, args=(shared_data,))
-#     joystick_proc.start()
-    
-#     # Give PyGame time to start
-#     time.sleep(1)
-    
-#     # Create optimized plot
-#     plot_3d = Optimized3DPlot()
-    
-#     # Add interactive controls
-#     def on_key(event):
-#         if event.key == 'r':
-#             # Reset view
-#             plot_3d.ax.view_init(elev=20, azim=45)
-#             plot_3d.fig.canvas.draw()
-#         elif event.key == 'c':
-#             # Clear trajectory
-#             plot_3d.clear_trajectory()
-    
-#     plot_3d.fig.canvas.mpl_connect('key_press_event', on_key)
-    
-#     # Optimization: Update plot less frequently
-#     plot_update_interval = 0.016  # ~60 FPS
-#     last_update_time = time.time()
-    
-#     try:
-#         while shared_data.running.value:
-#             current_time = time.time()
-            
-#             # Throttle plot updates
-#             if current_time - last_update_time >= plot_update_interval:
-#                 x = shared_data.x.value
-#                 y = shared_data.y.value
-#                 z = shared_data.z.value
-                
-#                 plot_3d.update_plot_optimized(x, y, z)
-#                 last_update_time = current_time
-            
-#             # Check if plot window is closed
-#             if not plt.fignum_exists(plot_3d.fig.number):
-#                 shared_data.running.value = 0
-#                 break
-                
-#             # Small sleep to prevent CPU spinning
-#             time.sleep(0.001)
-                
-#     except KeyboardInterrupt:
-#         print("\nInterrupted by user")
-    
-#     finally:
-#         shared_data.running.value = 0
-#         joystick_proc.join(timeout=2)
-#         if joystick_proc.is_alive():
-#             joystick_proc.terminate()
-#         plot_3d.close()
-#         print("Application closed.")
-
-# if __name__ == "__main__":
-#     mp.freeze_support()
-#     main_optimized()

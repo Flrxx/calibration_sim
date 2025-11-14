@@ -9,32 +9,24 @@ import matplotlib
 
 class SharedData:
     def __init__(self):
-        # Coordinates for 6 points
-        self.coords = [mp.Value('d', 0.0) for _ in range(18)]  # 6 points * 3 coordinates
+        # Arrow direction vector (normalized)
+        self.arrow_dir = [mp.Value('d', 0.0) for _ in range(3)]  # dx, dy, dz direction
         self.running = mp.Value('i', 1)
     
-    def get_point(self, point_idx):
-        """Get coordinates for a specific point (0-5)"""
-        if 0 <= point_idx < 6:
-            base_idx = point_idx * 3
-            return (self.coords[base_idx].value, 
-                    self.coords[base_idx + 1].value, 
-                    self.coords[base_idx + 2].value)
-        return (0, 0, 0)
+    def get_arrow_data(self):
+        """Get arrow direction"""
+        dir_vec = (self.arrow_dir[0].value, self.arrow_dir[1].value, self.arrow_dir[2].value)
+        return dir_vec
     
-    def set_point(self, point_idx, x, y, z):
-        """Set coordinates for a specific point (0-5)"""
-        if 0 <= point_idx < 6:
-            base_idx = point_idx * 3
-            self.coords[base_idx].value = x
-            self.coords[base_idx + 1].value = y
-            self.coords[base_idx + 2].value = z
+    def set_arrow_data(self, dir_vec):
+        """Set arrow direction"""
+        self.arrow_dir[0].value, self.arrow_dir[1].value, self.arrow_dir[2].value = dir_vec
 
 def joystick_process(shared_data):
-    """PyGame joystick process for 18 joysticks (6 points)"""
+    """PyGame joystick process for arrow direction control"""
     pygame.init()
-    screen = pygame.display.set_mode((800, 900))  # Larger window for 18 joysticks
-    pygame.display.set_caption("6-Point 3D Chain Control")
+    screen = pygame.display.set_mode((400, 300))
+    pygame.display.set_caption("3D Arrow Direction Control")
     clock = pygame.time.Clock()
     
     class OptimizedJoystick:
@@ -49,7 +41,7 @@ def joystick_process(shared_data):
             self.joystick_id = joystick_id
             self.label = label
             self.update_knob_position_from_value()
-            self.font = pygame.font.Font(None, 20)  # Smaller font for more labels
+            self.font = pygame.font.Font(None, 24)
             
         def update_knob_position_from_value(self):
             value_range = self.upper_limit - self.lower_limit
@@ -63,22 +55,22 @@ def joystick_process(shared_data):
             pygame.draw.rect(surface, (50, 50, 50), self.rect, 2)
             
             # Draw limits
-            lower_text = self.font.render(f"{self.lower_limit:.0f}", True, (200, 200, 200))
-            upper_text = self.font.render(f"{self.upper_limit:.0f}", True, (200, 200, 200))
-            surface.blit(lower_text, (self.rect.left - 25, self.rect.centery - 8))
-            surface.blit(upper_text, (self.rect.right + 5, self.rect.centery - 8))
+            lower_text = self.font.render(f"{self.lower_limit:.1f}", True, (200, 200, 200))
+            upper_text = self.font.render(f"{self.upper_limit:.1f}", True, (200, 200, 200))
+            surface.blit(lower_text, (self.rect.left - 30, self.rect.centery - 10))
+            surface.blit(upper_text, (self.rect.right + 5, self.rect.centery - 10))
             
             # Draw label
             id_text = self.font.render(f"{self.label}", True, (255, 255, 255))
-            surface.blit(id_text, (self.rect.centerx - 15, self.rect.top - 20))
+            surface.blit(id_text, (self.rect.centerx - 15, self.rect.top - 25))
             
             # Draw knob
             pygame.draw.rect(surface, (200, 50, 50), self.knob_rect)
             pygame.draw.rect(surface, (255, 255, 255), self.knob_rect, 2)
             
             # Draw current value
-            value_text = self.font.render(f"{self.value:.1f}", True, (255, 255, 0))
-            surface.blit(value_text, (self.knob_rect.centerx - 15, self.knob_rect.top - 20))
+            value_text = self.font.render(f"{self.value:.2f}", True, (255, 255, 0))
+            surface.blit(value_text, (self.knob_rect.centerx - 20, self.knob_rect.top - 25))
             
         def handle_event(self, event):
             if event.type == pygame.MOUSEBUTTONDOWN:
@@ -95,44 +87,19 @@ def joystick_process(shared_data):
         def get_value(self):
             return self.value
     
-    # Create 18 joysticks - 3 for each of 6 points
-    joystick_limits = [-100.0, 100.0]
-    all_joysticks = []
+    # Create 3 joysticks for arrow direction
+    joystick_limits = [-1.0, 1.0]  # Normalized direction components
+    arrow_joysticks = []
+    arrow_labels = ["Direction X", "Direction Y", "Direction Z"]
     
-    # Colors for different points
-    point_colors = [
-        (255, 100, 100),   # Point 1 - Red
-        (255, 165, 0),     # Point 2 - Orange
-        (255, 255, 0),     # Point 3 - Yellow
-        (0, 255, 0),       # Point 4 - Green
-        (0, 0, 255),       # Point 5 - Blue
-        (128, 0, 128)      # Point 6 - Purple
-    ]
+    for i in range(3):
+        x = 50
+        y = 50 + i * 80
+        joystick = OptimizedJoystick(x, y, 300, 30, joystick_limits, i, arrow_labels[i])
+        arrow_joysticks.append(joystick)
     
-    # Create joysticks in a grid layout
-    for point_idx in range(6):
-        point_color = point_colors[point_idx]
-        
-        # Point title
-        title_font = pygame.font.Font(None, 24)
-        
-        for coord_idx in range(3):
-            # Calculate position in grid
-            col = point_idx % 2  # 0 or 1 for left/right column
-            row = point_idx // 2 # 0, 1, 2 for rows
-            
-            x = 50 + col * 380
-            y = 50 + row * 140 + coord_idx * 40
-            
-            coord_labels = ["X", "Y", "Z"]
-            label = f"P{point_idx+1} {coord_labels[coord_idx]}"
-            
-            joystick = OptimizedJoystick(x, y, 150, 25, joystick_limits, 
-                                       point_idx * 3 + coord_idx, label)
-            all_joysticks.append(joystick)
-    
-    font = pygame.font.Font(None, 24)
-    title_font = pygame.font.Font(None, 28)
+    font = pygame.font.Font(None, 36)
+    title_font = pygame.font.Font(None, 32)
     
     frame_counter = 0
     update_frequency = 2
@@ -142,7 +109,7 @@ def joystick_process(shared_data):
             if event.type == pygame.QUIT:
                 shared_data.running.value = 0
                 break
-            for joystick in all_joysticks:
+            for joystick in arrow_joysticks:
                 joystick.handle_event(event)
         
         if not shared_data.running.value:
@@ -150,174 +117,172 @@ def joystick_process(shared_data):
         
         screen.fill((30, 30, 30))
         
-        # Draw titles for each point group
-        for point_idx in range(6):
-            col = point_idx % 2
-            row = point_idx // 2
-            x = 50 + col * 380
-            y = 30 + row * 140
-            
-            title_text = title_font.render(f"Point {point_idx+1}", True, point_colors[point_idx])
-            screen.blit(title_text, (x, y))
+        # Draw title
+        title_text = title_font.render("3D Arrow Direction Control", True, (255, 255, 255))
+        screen.blit(title_text, (80, 15))
         
-        # Draw all joysticks
-        for joystick in all_joysticks:
+        # Draw arrow joysticks
+        for joystick in arrow_joysticks:
             joystick.draw(screen)
         
-        # Get current values and update shared data
-        point_values = []
-        for point_idx in range(6):
-            point_vals = []
-            for coord_idx in range(3):
-                joystick_idx = point_idx * 3 + coord_idx
-                point_vals.append(all_joysticks[joystick_idx].get_value())
-            point_values.append(point_vals)
+        # Get current direction values
+        arrow_dir = [joystick.get_value() for joystick in arrow_joysticks]
+        
+        # Normalize direction vector
+        dir_magnitude = np.sqrt(sum(d**2 for d in arrow_dir))
+        if dir_magnitude > 0:
+            normalized_dir = [d / dir_magnitude for d in arrow_dir]
+        else:
+            normalized_dir = [0, 0, 0]
         
         # Update shared data less frequently
         frame_counter += 1
         if frame_counter >= update_frequency:
-            for point_idx in range(6):
-                shared_data.set_point(point_idx, *point_values[point_idx])
+            shared_data.set_arrow_data(normalized_dir)
             frame_counter = 0
         
-        # Display current coordinates for all points
-        y_offset = 750
-        for point_idx in range(6):
-            x, y, z = point_values[point_idx]
-            coord_text = font.render(
-                f"P{point_idx+1}: ({x:6.1f}, {y:6.1f}, {z:6.1f})", 
-                True, point_colors[point_idx]
-            )
-            screen.blit(coord_text, (50 + (point_idx % 3) * 250, y_offset + (point_idx // 3) * 30))
+        # Display current direction
+        dir_text = font.render(
+            f"Direction: ({normalized_dir[0]:.3f}, {normalized_dir[1]:.3f}, {normalized_dir[2]:.3f})", 
+            True, (255, 255, 0)
+        )
+        screen.blit(dir_text, (50, 250))
+        
+        # Display magnitude
+        mag_text = font.render(f"Magnitude: {dir_magnitude:.3f}", True, (0, 255, 255))
+        screen.blit(mag_text, (50, 280))
         
         pygame.display.flip()
         clock.tick(60)
     
     pygame.quit()
 
-class SixPoint3DPlot:
-    def __init__(self):
+class Arrow3DPlot:
+    def __init__(self, x_limits=(-1.5, 1.5), y_limits=(-1.5, 1.5), z_limits=(-1.5, 1.5)):
         plt.ion()
-        self.fig = plt.figure(figsize=(14, 10))
+        self.fig = plt.figure(figsize=(10, 8))
         self.ax = self.fig.add_subplot(111, projection='3d')
         
-        # Trajectories for all points
-        self.trajectory_max_points = 50  # Reduced for performance
-        self.trajectories = [deque(maxlen=self.trajectory_max_points) for _ in range(6)]
+        # Store axis limits and calculate aspect ratios
+        self.x_limits = x_limits
+        self.y_limits = y_limits  
+        self.z_limits = z_limits
+        
+        x_range = x_limits[1] - x_limits[0]
+        y_range = y_limits[1] - y_limits[0]
+        z_range = z_limits[1] - z_limits[0]
+        max_range = max(x_range, y_range, z_range)
+        self.aspect_ratios = [x_range/max_range, y_range/max_range, z_range/max_range]
+        
+        # Arrow visualization
+        self.arrow_quiver = None
+        self.arrow_start = [0, 0, 0]  # Fixed start position at origin
+        self.arrow_length = 1.0  # Fixed length for normalized direction
+        
+        # Store direction history for trail
+        self.direction_history = deque(maxlen=50)
         
         self.setup_optimized_plot()
         
     def setup_optimized_plot(self):
-        """Setup the 6-point 3D plot"""
+        """Setup the 3D arrow plot"""
         self.ax.set_xlabel('X')
         self.ax.set_ylabel('Y') 
         self.ax.set_zlabel('Z')
         
-        # Set fixed limits
-        self.ax.set_xlim([-120, 120])
-        self.ax.set_ylim([-120, 120])
-        self.ax.set_zlim([-120, 120])
-        self.ax.set_box_aspect([1, 1, 1])
+        # Set custom axis limits
+        self.ax.set_xlim(self.x_limits)
+        self.ax.set_ylim(self.y_limits)
+        self.ax.set_zlim(self.z_limits)
+        self.ax.set_box_aspect(self.aspect_ratios)
         
-        # Disable some expensive features
-        self.ax.grid(True, alpha=0.2)
+        self.ax.grid(True, alpha=0.3)
         self.ax.xaxis.pane.fill = False
         self.ax.yaxis.pane.fill = False
         self.ax.zaxis.pane.fill = False
         
-        # Colors for points
-        self.point_colors = [
-            'red',    # Point 1
-            'orange', # Point 2
-            'yellow', # Point 3
-            'green',  # Point 4
-            'blue',   # Point 5
-            'purple'  # Point 6
-        ]
+        # Draw coordinate system axes
+        self.ax.quiver(0, 0, 0, 1, 0, 0, color='red', alpha=0.5, linewidth=2, label='X axis', arrow_length_ratio=0.1)
+        self.ax.quiver(0, 0, 0, 0, 1, 0, color='green', alpha=0.5, linewidth=2, label='Y axis', arrow_length_ratio=0.1)
+        self.ax.quiver(0, 0, 0, 0, 0, 1, color='blue', alpha=0.5, linewidth=2, label='Z axis', arrow_length_ratio=0.1)
         
-        self.point_markers = ['o', 's', '^', 'D', 'v', '>']
+        # Initialize arrow (will be created in update_plot)
+        self.arrow_quiver = None
         
-        # Initialize plots for all points
-        self.trajectory_lines = []
-        self.current_points = []
-        self.connection_lines = []
+        # Initialize direction trail
+        self.trail_line, = self.ax.plot([], [], [], 'cyan', alpha=0.3, linewidth=1, label='Direction History')
         
-        for i in range(6):
-            # Trajectory lines
-            traj_line, = self.ax.plot([], [], [], color=self.point_colors[i], 
-                                    alpha=0.5, linewidth=1.0, 
-                                    label=f'P{i+1} Trajectory')
-            self.trajectory_lines.append(traj_line)
-            
-            # Current points
-            point = self.ax.scatter([0], [0], [0], c=self.point_colors[i], 
-                                  s=80, marker=self.point_markers[i], 
-                                  label=f'Point {i+1}')
-            self.current_points.append(point)
-        
-        # Connection lines between consecutive points
-        for i in range(5):  # 5 connections for 6 points
-            conn_line, = self.ax.plot([], [], [], 'gray', alpha=0.7, 
-                                    linewidth=2.0, linestyle='--',
-                                    label=f'P{i+1}-P{i+2}' if i == 0 else "")
-            self.connection_lines.append(conn_line)
-        
-        # Add legend
-        self.ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        self.ax.legend()
         
         # Initial draw
         self.fig.canvas.draw()
         
-    def update_plot_optimized(self, points_coords):
-        """Update plot with all 6 points' positions"""
-        # Update trajectories
-        for i in range(6):
-            self.trajectories[i].append(points_coords[i])
+    def update_plot(self, arrow_dir):
+        """Update plot with arrow direction"""
+        # Add to direction history for trail
+        if any(d != 0 for d in arrow_dir):
+            self.direction_history.append(arrow_dir)
         
-        # Update trajectory lines
-        for i in range(6):
-            if len(self.trajectories[i]) > 1:
-                traj_array = np.array(self.trajectories[i])
-                self.trajectory_lines[i].set_data(traj_array[:, 0], traj_array[:, 1])
-                self.trajectory_lines[i].set_3d_properties(traj_array[:, 2])
-            else:
-                self.trajectory_lines[i].set_data([], [])
-                self.trajectory_lines[i].set_3d_properties([])
+        # Update direction trail
+        if len(self.direction_history) > 1:
+            # Create trail showing previous directions
+            trail_array = np.array(self.direction_history)
+            # Scale directions for visualization
+            scaled_trail = trail_array * 0.3  # Smaller trail for better visualization
+            self.trail_line.set_data(scaled_trail[:, 0], scaled_trail[:, 1])
+            self.trail_line.set_3d_properties(scaled_trail[:, 2])
         
-        # Update current points
-        for i in range(6):
-            x, y, z = points_coords[i]
-            self.current_points[i]._offsets3d = ([x], [y], [z])
-        
-        # Update connection lines between consecutive points
-        total_length = 0
-        for i in range(5):
-            x1, y1, z1 = points_coords[i]
-            x2, y2, z2 = points_coords[i + 1]
+        # Update arrow
+        if any(d != 0 for d in arrow_dir):  # Only draw if direction is non-zero
+            # Remove existing arrow if it exists
+            if self.arrow_quiver is not None:
+                self.arrow_quiver.remove()
             
-            self.connection_lines[i].set_data([x1, x2], [y1, y2])
-            self.connection_lines[i].set_3d_properties([z1, z2])
+            # Create new arrow
+            x, y, z = self.arrow_start
+            u, v, w = arrow_dir
             
-            # Calculate segment length
-            segment_length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
-            total_length += segment_length
+            # Scale the arrow direction
+            scale = self.arrow_length
+            self.arrow_quiver = self.ax.quiver(x, y, z, u*scale, v*scale, w*scale, 
+                                             color='yellow', alpha=0.9, linewidth=4,
+                                             arrow_length_ratio=0.2, label='Current Direction')
+        
+        # Calculate spherical coordinates
+        if any(d != 0 for d in arrow_dir):
+            # Convert to spherical coordinates
+            dx, dy, dz = arrow_dir
+            r = np.sqrt(dx**2 + dy**2 + dz**2)
+            theta = np.arctan2(dy, dx)  # Azimuthal angle (in xy-plane)
+            phi = np.arccos(dz / r) if r > 0 else 0  # Polar angle (from z-axis)
+            
+            # Convert to degrees
+            theta_deg = np.degrees(theta)
+            phi_deg = np.degrees(phi)
+        else:
+            theta_deg = 0
+            phi_deg = 0
         
         # Update title
         if hasattr(self, 'last_title_update'):
-            if time.time() - self.last_title_update > 0.3:  # Update less frequently
-                coord_text = " | ".join([f"P{i+1}({p[0]:.1f},{p[1]:.1f},{p[2]:.1f})" 
-                                       for i, p in enumerate(points_coords)])
-                self.ax.set_title(f'6-Point 3D Chain\n{coord_text}\nTotal Length: {total_length:.1f}', 
-                                fontsize=10)
+            if time.time() - self.last_title_update > 0.2:
+                self.ax.set_title(
+                    f'3D Arrow Direction\n'
+                    f'Direction: ({arrow_dir[0]:.3f}, {arrow_dir[1]:.3f}, {arrow_dir[2]:.3f})\n'
+                    f'Azimuth: {theta_deg:.1f}° | Polar: {phi_deg:.1f}°',
+                    fontweight='bold'
+                )
                 self.last_title_update = time.time()
         else:
-            coord_text = " | ".join([f"P{i+1}({p[0]:.1f},{p[1]:.1f},{p[2]:.1f})" 
-                                   for i, p in enumerate(points_coords)])
-            self.ax.set_title(f'6-Point 3D Chain\n{coord_text}\nTotal Length: {total_length:.1f}', 
-                            fontsize=10)
+            self.ax.set_title(
+                f'3D Arrow Direction\n'
+                f'Direction: ({arrow_dir[0]:.3f}, {arrow_dir[1]:.3f}, {arrow_dir[2]:.3f})\n'
+                f'Azimuth: {theta_deg:.1f}° | Polar: {phi_deg:.1f}°',
+                fontweight='bold'
+            )
             self.last_title_update = time.time()
         
-        # Use blitting for faster updates
+        # Update plot
         try:
             self.fig.canvas.draw_idle()
         except:
@@ -325,30 +290,25 @@ class SixPoint3DPlot:
         
         self.fig.canvas.flush_events()
     
-    def clear_trajectories(self):
-        """Clear all trajectories"""
-        for trajectory in self.trajectories:
-            trajectory.clear()
-        
-        for line in self.trajectory_lines:
-            line.set_data([], [])
-            line.set_3d_properties([])
-        
-        for line in self.connection_lines:
-            line.set_data([], [])
-            line.set_3d_properties([])
-        
+    def clear_history(self):
+        """Clear direction history trail"""
+        self.direction_history.clear()
+        self.trail_line.set_data([], [])
+        self.trail_line.set_3d_properties([])
         self.fig.canvas.draw()
     
     def close(self):
         plt.close(self.fig)
+        
+    def is_open(self):
+        return plt.fignum_exists(self.fig.number)
 
 def main_optimized():
-    """Optimized main process for 6-point chain control"""
-    print("Starting 6-POINT 3D CHAIN Visualization...")
-    print("Controls: Drag joysticks in PyGame window | Rotate 3D view with mouse")
-    print("Press 'r' to reset view | Press 'c' to clear trajectories")
-    print("Points are connected in sequence: P1 → P2 → P3 → P4 → P5 → P6")
+    """Main process for arrow direction control"""
+    print("Starting 3D Arrow Direction Control...")
+    print("Controls: Drag joysticks to control arrow direction")
+    print("Press 'r' to reset view | Press 'c' to clear direction history")
+    print("Arrow starts at origin (0,0,0) with fixed length")
     
     # Use shared memory
     shared_data = SharedData()
@@ -360,8 +320,12 @@ def main_optimized():
     # Give PyGame time to start
     time.sleep(1)
     
-    # Create 6-point plot
-    plot_3d = SixPoint3DPlot()
+    # Create arrow plot
+    plot_3d = Arrow3DPlot(
+        x_limits=(-1.2, 1.2),
+        y_limits=(-1.2, 1.2), 
+        z_limits=(-1.2, 1.2)
+    )
     
     # Add interactive controls
     def on_key(event):
@@ -370,13 +334,13 @@ def main_optimized():
             plot_3d.ax.view_init(elev=20, azim=45)
             plot_3d.fig.canvas.draw()
         elif event.key == 'c':
-            # Clear trajectories
-            plot_3d.clear_trajectories()
+            # Clear direction history
+            plot_3d.clear_history()
     
     plot_3d.fig.canvas.mpl_connect('key_press_event', on_key)
     
     # Optimization: Update plot less frequently
-    plot_update_interval = 0.02  # ~50 FPS
+    plot_update_interval = 0.016  # ~60 FPS
     last_update_time = time.time()
     
     try:
@@ -385,13 +349,13 @@ def main_optimized():
             
             # Throttle plot updates
             if current_time - last_update_time >= plot_update_interval:
-                # Get all points' coordinates
-                points_coords = [shared_data.get_point(i) for i in range(6)]
-                plot_3d.update_plot_optimized(points_coords)
+                # Get arrow direction
+                arrow_dir = shared_data.get_arrow_data()
+                plot_3d.update_plot(arrow_dir)
                 last_update_time = current_time
             
             # Check if plot window is closed
-            if not plt.fignum_exists(plot_3d.fig.number):
+            if not plot_3d.is_open():
                 shared_data.running.value = 0
                 break
                 

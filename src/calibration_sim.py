@@ -111,54 +111,40 @@ class HayatiModel:
         else:
             raise ValueError("type must be 'nominal', 'real' or 'estimated'")
         main_tf, tool = self.get_base_tool_tf(base_params, tool_params)
-        result = {"coord": [], "transition_matrix": []}
-        result["coord"].append([main_tf[0][-1], main_tf[1][-1], main_tf[2][-1]])
+        result = {"coords": [], "transition_matrix": []}
+        result["coords"].append([main_tf[0][-1], main_tf[1][-1], main_tf[2][-1]])
 
         tfs = self.get_transforms(angles, params)
         for i, tf in enumerate(tfs):
             main_tf = main_tf @ tf
-            result["coord"].append([main_tf[0][-1], main_tf[1][-1], main_tf[2][-1]])
+            result["coords"].append([main_tf[0][-1], main_tf[1][-1], main_tf[2][-1]])
         
         result["transition_matrix"] = main_tf @ tool
-        result["coord"].append(result["transition_matrix"][0][-1], result["transition_matrix"][1][-1], result["transition_matrix"][2][-1])
+        result["coords"].append([result["transition_matrix"][0][-1], result["transition_matrix"][1][-1], result["transition_matrix"][2][-1]])
 
         return result
 
-def test(args):
-    with open(args.config, 'r') as config_file:
-        config = json.load(config_file)
-    model = HayatiModel(config)
-
+def vizualize(model: HayatiModel, visualization_model="nominal"):
     running = mp.Value("i", 1)
-    angles_nominal = mp.Array(c_float, 6)
-    angles_real = mp.Array(c_float, 6)
+    angles_values = mp.Array(c_float, 6)
    
-    joystick_proc = mp.Process(target=joystick.joystick_process, args=(model.joint_limits_general_h, model.joint_limits_general_l, angles_nominal, angles_real, running))
+    joystick_proc = mp.Process(target=joystick.joystick_process, args=(model.joint_limits_general_h, model.joint_limits_general_l, angles_values, running, visualization_model))
     joystick_proc.start()
-    
-    robot_display = robot_visualization.ShowRobot()
+    time.sleep(1)
 
+    robot_display = robot_visualization.ShowRobot(model.cartesian_limits)
     plot_update_interval = 0.016  # ~60 FPS
     last_update_time = time.time()
-
     while running:
         current_time = time.time()
         if current_time - last_update_time >= plot_update_interval:
-            nom_trans_m = model.get_transition_matrix(angles_nominal, "nominal")
-            real_trans_m = model.get_transition_matrix(angles_real, "real")
-
-            cart_nominal = [nom_trans_m[0][-1], nom_trans_m[1][-1], nom_trans_m[2][-1]]
-            cart_real = [real_trans_m[0][-1], real_trans_m[1][-1], real_trans_m[2][-1]]
-
-            print(f"Nominal: {cart_nominal[0]:.3f}, {cart_nominal[1]:.3f}, {cart_nominal[2]:.3f}")
-            print(f"Real: {cart_real[0]:.3f}, {cart_real[1]:.3f}, {cart_real[2]:.3f}")
+            coords_and_matrix = model.get_joint_coordinates_and_transition_matrix(angles_values, visualization_model)
                 
-            robot_display.update_robot(cart_nominal)
+            robot_display.update_robot(coords_and_matrix["coords"])
             last_update_time = current_time
             
             # Small sleep to prevent CPU spinning
             time.sleep(0.001)
-
     pygame.quit()
 
 
@@ -166,11 +152,11 @@ def main(args):
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
     model = HayatiModel(config)
-
+    vizualize(model, "nominal")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="ARM95.json")
     parser.add_argument("-g", "--generate", help="Generate dataset for selected method. Default: false", type=bool, default=False)
     args = parser.parse_args()
-    test(args)
+    main(args)
