@@ -152,6 +152,15 @@ class JointJoysticks:
         """Returns a list of limits for all joysticks"""
         return [joystick.limits for joystick in self.joysticks]
 
+def joystick_process(upper_limit: float, lower_limit: float, angles_nominal:list, angles_real:list, running: int):
+    joints_joysticks = JointJoysticks(upper_limit, lower_limit, "Joints")
+    while(running):
+        joints_joysticks.draw_joint_joysticks()
+        joints_joysticks.clock.tick(60)
+        res = joints_joysticks.get_all_joystick_values()
+        for i in range(6):
+            angles_nominal[i] = res[i]
+            angles_real[i] = res[i + 6]
 
 # # Function that uses the joystick values
 # def process_joystick_data(joysticks):

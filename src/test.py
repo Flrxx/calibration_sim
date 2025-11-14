@@ -171,10 +171,10 @@ class Optimized3DPlot:
         # Initial draw
         self.fig.canvas.draw()
         
-    def update_plot_optimized(self, x, y, z):
+    def update_plot_optimized(self, data):
         """Fixed trajectory plotting"""
         # Add new point to trajectory
-        self.trajectory.append([x, y, z])
+        self.trajectory.append(data)
         
         # Convert trajectory to numpy array for plotting
         if len(self.trajectory) > 1:
@@ -187,15 +187,15 @@ class Optimized3DPlot:
             self.trajectory_line.set_3d_properties([])
         
         # Update current point
-        self.current_point._offsets3d = ([x], [y], [z])
+        self.current_point._offsets3d = ([data[0]], [data[1]], [data[2]])
         
         # Update title less frequently
         if hasattr(self, 'last_title_update'):
             if time.time() - self.last_title_update > 0.2:  # Update title every 200ms
-                self.ax.set_title(f'X: {x:.1f}, Y: {y:.1f}, Z: {z:.1f}')
+                self.ax.set_title(f'X: {data[0]:.1f}, Y: {data[1]:.1f}, Z: {data[2]:.1f}')
                 self.last_title_update = time.time()
         else:
-            self.ax.set_title(f'X: {x:.1f}, Y: {y:.1f}, Z: {z:.1f}')
+            self.ax.set_title(f'X: {data[0]:.1f}, Y: {data[1]:.1f}, Z: {data[2]:.1f}')
             self.last_title_update = time.time()
         
         # Use blitting for faster updates
@@ -261,7 +261,7 @@ def main_optimized():
                 y = shared_data.y.value
                 z = shared_data.z.value
                 
-                plot_3d.update_plot_optimized(x, y, z)
+                plot_3d.update_plot_optimized([x, y, z])
                 last_update_time = current_time
             
             # Check if plot window is closed

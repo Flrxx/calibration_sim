@@ -4,13 +4,13 @@ from math import cos, sin, pi, sqrt, atan2, asin, log10, acos, copysign
 from typing import Union
 from math_routines import x_rot, y_rot, z_rot, arbitrary_axis_rot, trans
 from robotic_transformations import dh_trans, hayati_trans
-import plotting 
+import robot_visualization 
 import pygame
 import joystick 
 import argparse
 import json
 import time
-import ctypes
+from ctypes import c_float
 import multiprocessing as mp
 
 class HayatiModel:
@@ -95,6 +95,34 @@ class HayatiModel:
             main_tf = main_tf @ tf
         return main_tf @ tool
     
+    def get_joint_coordinates_and_transition_matrix(self, angles: Union[np.ndarray, list], type: str) -> np.ndarray:
+        if type == 'estimated':
+            params = self.estimated_dh
+            tool_params = self.estimated_tool_params
+            base_params = self.estimated_base_params
+        elif type == 'nominal':
+            params = self.nominal_dh
+            tool_params = self.nominal_tool_params
+            base_params = self.nominal_base_params
+        elif type == 'real':
+            params = self.real_dh
+            tool_params = self.real_tool_params
+            base_params = self.real_base_params
+        else:
+            raise ValueError("type must be 'nominal', 'real' or 'estimated'")
+        main_tf, tool = self.get_base_tool_tf(base_params, tool_params)
+        result = {"coord": [], "transition_matrix": []}
+        result["coord"].append([main_tf[0][-1], main_tf[1][-1], main_tf[2][-1]])
+
+        tfs = self.get_transforms(angles, params)
+        for i, tf in enumerate(tfs):
+            main_tf = main_tf @ tf
+            result["coord"].append([main_tf[0][-1], main_tf[1][-1], main_tf[2][-1]])
+        
+        result["transition_matrix"] = main_tf @ tool
+        result["coord"].append(result["transition_matrix"][0][-1], result["transition_matrix"][1][-1], result["transition_matrix"][2][-1])
+
+        return result
 
 def test(args):
     with open(args.config, 'r') as config_file:
@@ -102,59 +130,32 @@ def test(args):
     model = HayatiModel(config)
 
     running = mp.Value("i", 1)
-    angles_nominal = mp.Array(ctypes.c_float, 6)
-    angles_real = mp.Array(ctypes.c_float, 6)
-    # for i in range(6):
-    #     angles_nominal[i] = 0
-    #     angles_real[i] = 0
-
-    #joints_joysticks = joystick.JointJoysticks(model.joint_limits_general_h, model.joint_limits_general_l, "Joints")
-    joystick_proc = mp.Process(target=plotting.joystick_process, args=(model.joint_limits_general_h, model.joint_limits_general_l, angles_nominal, angles_real, running))
+    angles_nominal = mp.Array(c_float, 6)
+    angles_real = mp.Array(c_float, 6)
+   
+    joystick_proc = mp.Process(target=joystick.joystick_process, args=(model.joint_limits_general_h, model.joint_limits_general_l, angles_nominal, angles_real, running))
     joystick_proc.start()
-
-    plot_display = plotting.Optimized3DPlot()
-    def on_key(event):
-        if event.key == 'r':
-            # Reset view
-            plot_display.ax.view_init(elev=20, azim=45)
-            plot_display.fig.canvas.draw()
-        elif event.key == 'c':
-            # Clear trajectories
-            plot_display.clear_trajectories()
     
-    plot_display.fig.canvas.mpl_connect('key_press_event', on_key)
-    # Optimization: Update plot less frequently
-    plot_update_interval = 0.016 * 2  # ~60 FPS
+    robot_display = robot_visualization.ShowRobot()
+
+    plot_update_interval = 0.016  # ~60 FPS
     last_update_time = time.time()
 
     while running:
-        # joints_joysticks.draw_joint_joysticks()
-        # joints_joysticks.clock.tick(60)
-
-        # angles_nominal = joints_joysticks.get_nominal_joint_values()
-        # angles_real = joints_joysticks.get_real_joint_values()
-
-        nom_trans_m = model.get_transition_matrix(angles_nominal, "nominal")
-        real_trans_m = model.get_transition_matrix(angles_real, "real")
-
-        cart_nominal = [nom_trans_m[0][-1], nom_trans_m[1][-1], nom_trans_m[2][-1]]
-        cart_real = [real_trans_m[0][-1], real_trans_m[1][-1], real_trans_m[2][-1]]
-
-        print(f"Nominal: {cart_nominal}")
-        print(f"Real: {cart_real}")
-
-        #Throttle plot updates
         current_time = time.time()
         if current_time - last_update_time >= plot_update_interval:
+            nom_trans_m = model.get_transition_matrix(angles_nominal, "nominal")
+            real_trans_m = model.get_transition_matrix(angles_real, "real")
+
+            cart_nominal = [nom_trans_m[0][-1], nom_trans_m[1][-1], nom_trans_m[2][-1]]
+            cart_real = [real_trans_m[0][-1], real_trans_m[1][-1], real_trans_m[2][-1]]
+
+            print(f"Nominal: {cart_nominal[0]:.3f}, {cart_nominal[1]:.3f}, {cart_nominal[2]:.3f}")
+            print(f"Real: {cart_real[0]:.3f}, {cart_real[1]:.3f}, {cart_real[2]:.3f}")
                 
-            plot_display.update_plot_optimized(cart_nominal)
+            robot_display.update_robot(cart_nominal)
             last_update_time = current_time
             
-            # # Check if plot window is closed
-            # if not plt.fignum_exists(plot_display.fig.number):
-            #     shared_data.running.value = 0
-            #     break
-                
             # Small sleep to prevent CPU spinning
             time.sleep(0.001)
 
