@@ -133,7 +133,7 @@ def vizualize(model: HayatiModel, visualization_model="nominal"):
     time.sleep(1)
 
     robot_display = robot_visualization.ShowRobot(model.cartesian_limits)
-    plot_update_interval = 0.016  # ~60 FPS
+    plot_update_interval = 0.016/10  # ~60 FPS
     last_update_time = time.time()
     while running:
         current_time = time.time()
@@ -152,7 +152,7 @@ def main(args):
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
     model = HayatiModel(config)
-    vizualize(model, "nominal")
+    vizualize(model, "real")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

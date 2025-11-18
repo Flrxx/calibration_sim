@@ -44,7 +44,7 @@ class ShowRobot:
         self.connection_lines = []
 
         # Trajectory line
-        self.trajectory_line, = self.ax.plot([], [], [], "black", alpha=0.7, linewidth=1.5)
+        self.trajectory_line, = self.ax.plot([], [], [], "purple", alpha=0.7, linewidth=1.0)
 
         for i in range(8):
             # Current points
