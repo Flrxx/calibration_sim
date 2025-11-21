@@ -124,9 +124,9 @@
   ],
   "max_z_angle": 3.14,
   "optimization_method": "levenberg_marquardt",
-  "dataset_file": "datasets/data_ARM95.csv",
-  "base_circles_dataset_file": "datasets/base_circles_ARM95.csv",
-  "tool_circles_dataset_file": "datasets/tool_circles_ARM95.csv",
+  "dataset_file": "datasets/ARM95/data_ARM95.csv",
+  "base_circles_dataset_file": "datasets/ARM95/base_circles_ARM95.csv",
+  "tool_circles_dataset_file": "datasets/ARM95/tool_circles_ARM95.csv",
   "results_file": "results/ARM95.json",
   "general_samples_number": 100,
   "circle_samples_number": 50

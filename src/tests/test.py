@@ -216,14 +216,23 @@ class Optimized3DPlot:
     def close(self):
         plt.close(self.fig)
 
+def on_key_press(event, trigger_flag):
+    """Handle keyboard events - toggle trigger when 'N' is pressed"""
+    if event.key == 'n' or event.key == 'N':
+        trigger_flag.value = not trigger_flag.value
+        print(f"Trigger: {trigger_flag.value}")
+
 def main_optimized():
     """Optimized main process"""
     print("Starting OPTIMIZED 3D Visualization...")
     print("Controls: Drag joysticks in PyGame window | Rotate 3D view with mouse")
-    print("Press 'r' to reset view | Press 'c' to clear trajectory")
+    print("Press 'n' to toggle trigger")
     
     # Use shared memory instead of queue
     shared_data = SharedData()
+    
+    # Add trigger flag
+    trigger_flag = mp.Value('i', 0)  # 0 = False, 1 = True
     
     # Start joystick process
     joystick_proc = mp.Process(target=joystick_process, args=(shared_data,))
@@ -235,17 +244,9 @@ def main_optimized():
     # Create optimized plot
     plot_3d = Optimized3DPlot()
     
-    # Add interactive controls
-    def on_key(event):
-        if event.key == 'r':
-            # Reset view
-            plot_3d.ax.view_init(elev=20, azim=45)
-            plot_3d.fig.canvas.draw()
-        elif event.key == 'c':
-            # Clear trajectory
-            plot_3d.clear_trajectory()
-    
-    plot_3d.fig.canvas.mpl_connect('key_press_event', on_key)
+    # Connect keyboard handler
+    plot_3d.fig.canvas.mpl_connect('key_press_event', 
+                                  lambda event: on_key_press(event, trigger_flag))
     
     # Optimization: Update plot less frequently
     plot_update_interval = 0.016  # ~60 FPS

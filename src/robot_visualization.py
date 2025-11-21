@@ -1,4 +1,6 @@
 import pygame
+import argparse
+import json
 import sys
 import multiprocessing as mp
 from typing import Union
@@ -10,9 +12,10 @@ import matplotlib
 import joystick 
 from ctypes import c_float
 import hayati_model
+from dataset_generation import read_dataset, FIELDNAMES_OPTIONS
 
 class ShowRobot:
-    def __init__(self, limits):
+    def __init__(self):
         plt.ion()
         self.fig = plt.figure(figsize=(14, 10))
         self.ax = self.fig.add_subplot(111, projection='3d')
@@ -20,7 +23,6 @@ class ShowRobot:
         self.trajectory_max_points = 50  # Reduced for performance
         self.trajectory = deque(maxlen=self.trajectory_max_points)
 
-        self.limits = limits 
         self.setup()
         
     def setup(self):
@@ -29,9 +31,9 @@ class ShowRobot:
         self.ax.set_zlabel('Z')
         
         # Set fixed limits
-        self.ax.set_xlim(self.limits[0])
-        self.ax.set_ylim(self.limits[1])
-        self.ax.set_zlim(self.limits[2])
+        self.ax.set_xlim([-0.8, 0.8])
+        self.ax.set_ylim([-0.8, 0.8])
+        self.ax.set_zlim([0, 1.1])
         #self.ax.set_box_aspect([1, 1, 1])
         
         # Disable some expensive features
@@ -44,6 +46,11 @@ class ShowRobot:
         # Initialize plots for all points
         self.current_points = []
         self.connection_lines = []
+
+        # Add joint values text annotation (top-left)
+        self.joint_text = self.fig.text(0.02, 0.8, '', transform=self.fig.transFigure, 
+                                       fontsize=11, fontfamily='monospace', fontweight='bold',
+                                       bbox=dict(boxstyle="round,pad=0.4", facecolor="lightblue", alpha=0.9))
 
         # Trajectory line
         self.trajectory_line, = self.ax.plot([], [], [], "purple", alpha=0.7, linewidth=1.0)
@@ -68,7 +75,7 @@ class ShowRobot:
         # Initial draw
         self.fig.canvas.draw()
         
-    def update_robot(self, points_coords):
+    def update_robot(self, points_coords, joint_values):
         
         # Update trajectory lines
         self.trajectory.append(points_coords[-1])
@@ -108,7 +115,10 @@ class ShowRobot:
         else:
             self.ax.set_title(f'X: {points_coords[-1][0]:.3f}, Y: {points_coords[-1][1]:.3f}, Z: {points_coords[-1][2]:.3f}')
             self.last_title_update = time.time()
-        
+
+        joint_info = f"JOINT VALUES:\nJ1: {joint_values[0]:.3f}\nJ2: {joint_values[1]:.3f}\nJ3: {joint_values[2]:.3f}\nJ4: {joint_values[3]:.3f}\nJ5: {joint_values[4]:.3f}\nJ6: {joint_values[5]:.3f}"
+        self.joint_text.set_text(joint_info)
+
         # Use blitting for faster updates
         try:
             self.fig.canvas.draw_idle()
@@ -128,34 +138,86 @@ class ShowRobot:
 
     def is_open(self):
         return plt.fignum_exists(self.fig.number)
-    
 
-def vizualize(model: hayati_model.HayatiModel, visualization_model="nominal"):
+def visualize_pose(model: hayati_model.HayatiModel, plot: ShowRobot, angles_values: Union[np.ndarray, list], model_type):
+    coords_and_matrix = model.get_joint_coordinates_and_transition_matrix(angles_values, model_type)
+    plot.update_robot(coords_and_matrix["coords"], angles_values)
+
+def vizualize_forward_kinematics(model: hayati_model.HayatiModel, model_type="nominal"):
     running = mp.Value("i", 1)
     angles_values = mp.Array(c_float, 6)
    
-    joystick_proc = mp.Process(target=joystick.joystick_process, args=(model.joint_limits_general_h, model.joint_limits_general_l, angles_values, running, visualization_model))
+    joystick_proc = mp.Process(target=joystick.joystick_process, args=(model.joint_limits_general_h, model.joint_limits_general_l, angles_values, running, model_type))
     joystick_proc.start()
     time.sleep(1)
 
-    robot_display = ShowRobot(model.cartesian_limits)
+    robot_display = ShowRobot()
     plot_update_interval = 0.0016/10 # more than 60 FPS
     last_update_time = time.time()
-    while running:
+    while running: 
         current_time = time.time()
-        if current_time - last_update_time >= plot_update_interval:
-            coords_and_matrix = model.get_joint_coordinates_and_transition_matrix(angles_values, visualization_model)
-                
-            robot_display.update_robot(coords_and_matrix["coords"])
+        if (current_time - last_update_time) >= plot_update_interval:
+            visualize_pose(model, robot_display, angles_values, model_type)
             last_update_time = current_time
 
             # Check if plot window is closed
             if not robot_display.is_open():
                 running.value = 0
                 break
-            
-            # Small sleep to prevent CPU spinning
-            time.sleep(0.001)
+
     joystick_proc.join()
     joystick_proc.close()
+    robot_display.close()
     pygame.quit()
+
+def on_key_press(event, counter, max):
+    if event.key == 'n' or event.key == 'N':
+        if(counter.value < max):
+            counter.value += 1
+    elif event.key == 'p' or event.key == 'P':
+        if(counter.value > 0):
+            counter.value -= 1
+
+def visualize_dataset(model: hayati_model.HayatiModel, dataset, model_type):
+    robot_display = ShowRobot()
+    num = mp.Value('i', 0)
+    robot_display.fig.canvas.mpl_connect('key_press_event', 
+                                lambda event: on_key_press(event, num, len(dataset) - 1))
+    
+    plot_update_interval = 0.0016/10 # more than 60 FPS
+    last_update_time = time.time()
+    print("Press 'n' and 'p' to navigate through samples")
+    while True:
+        current_time = time.time()
+        if (current_time - last_update_time) >= plot_update_interval:
+            visualize_pose(model, robot_display, dataset[num.value][:6], model_type)
+            last_update_time = current_time
+
+            # Check if plot window is closed
+            if not robot_display.is_open():
+                return
+    
+def main(args):
+    with open(args.config, 'r') as config_file:
+        config = json.load(config_file)
+    model = hayati_model.HayatiModel(config)
+
+    if args.visualization_type == "forward_kinematics":
+        vizualize_forward_kinematics(model, args.model_type)
+    elif args.visualization_type == "dataset":
+        if ("circle" in args.dataset):
+            dataset = read_dataset(args.dataset, FIELDNAMES_OPTIONS["circles"])
+        else:
+            dataset = read_dataset(args.dataset, FIELDNAMES_OPTIONS["random"])
+        visualize_dataset(model, dataset, args.model_type)
+    else:
+        raise ValueError("visualization_type should be 'forward_kinematics' or 'dataset'")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="ARM95.json")
+    parser.add_argument("-m", "--model_type", help="Choose model to be visualized. Default: nominal", type=str, default="nominal")
+    parser.add_argument("-t", "--visualization_type", help="Choose what you want to display: forward_kinematics or dataset. Default: forward_kinematics", type=str, default="forward_kinematics")
+    parser.add_argument("-d", "--dataset", help="Choose dataset to display. Default: datasets/ARM95/data_ARM95.csv", type=str, default="datasets/ARM95/data_ARM95.csv")
+    args = parser.parse_args()
+    main(args)

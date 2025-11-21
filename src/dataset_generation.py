@@ -1,8 +1,11 @@
 import csv
+import argparse
+import json
 import numpy as np
 from random import random
 from math_routines import extract_zyx_euler
 import hayati_model
+from typing import Union
 
 
 FIELDNAMES_OPTIONS = {
@@ -78,4 +81,27 @@ def make_circle(model, axis, initial_position):
         dataset = np.concatenate((dataset, np.concatenate((angles, real_position, [axis]), axis=0).reshape(1, -1)), axis=0)
         angles[axis - 1] += inc
     return dataset
+
+def read_dataset(filename: str, fieldnames: list[str]) -> Union[np.ndarray, np.ndarray]:
+    dataset = np.array([], dtype='float').reshape(0, len(fieldnames))
+    with open(filename, newline='') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            dataset = np.concatenate((dataset, np.array([float(row[field]) for field in fieldnames]).reshape(1, -1)), axis=0)
+    return dataset
+
+def main(args):
+    with open(args.config, 'r') as config_file:
+        config = json.load(config_file)
+    model = hayati_model.HayatiModel(config)
+
+    if args.generate:
+        generate_dataset(model)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="ARM95.json")
+    parser.add_argument("-g", "--generate", help="Generate dataset for selected method. Default: true", type=bool, default=True)
+    args = parser.parse_args()
+    main(args)
         
