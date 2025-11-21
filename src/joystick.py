@@ -1,5 +1,4 @@
 import pygame
-import sys
 
 class LinearJoystick:
     def __init__(self, x, y, width, height, limits, joystick_id):
@@ -154,7 +153,7 @@ class JointJoysticks:
 
 def joystick_process(upper_limit: float, lower_limit: float, angles_values:list, running: int, name:str):
     joints_joysticks = JointJoysticks(upper_limit, lower_limit, name)
-    while(running):
+    while(running.value):
         joints_joysticks.draw_joint_joysticks()
         joints_joysticks.clock.tick(60)
         res = joints_joysticks.get_all_joystick_values()

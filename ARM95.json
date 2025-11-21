@@ -47,22 +47,22 @@
   ],
   "nominal_dh": [
     [
-      0, 1.5708, 0.15075, 0, 0
+      0, 1.5708, 0.17, 0, 0
     ],
     [
-      0.45992, 3.1416, 0, 1.5708, 1
+      0.46, 3.1416, 0, 1.5708, 1
     ],
     [
-      0.27010, 3.1416, 0, 0, 1
+      0.38, 3.1416, 0, 0, 1
     ],
     [
-      0, 1.5708, 0.16451, 1.5708, 0
+      0, 1.5708, 0.135, 1.5708, 0
     ],
     [
-      0, 1.5708, 0.11968, 3.1416, 0
+      0, 1.5708, 0.109, 3.1416, 0
     ],
     [
-      0, 0, 0.06491, 0, 0
+      0, 0, 0.061, 0, 0
     ]
   ],
   "nominal_base_params": [
@@ -124,10 +124,10 @@
   ],
   "max_z_angle": 3.14,
   "optimization_method": "levenberg_marquardt",
-  "dataset_file": "data_ar_95_merged.csv",
-  "base_circles_dataset_file": "base_circles_ar_95.csv",
-  "tool_circles_dataset_file": "tool_circles_ar_95.csv",
-  "results_file": "results.json",
+  "dataset_file": "datasets/data_ARM95.csv",
+  "base_circles_dataset_file": "datasets/base_circles_ARM95.csv",
+  "tool_circles_dataset_file": "datasets/tool_circles_ARM95.csv",
+  "results_file": "results/ARM95.json",
   "general_samples_number": 100,
   "circle_samples_number": 50
 }

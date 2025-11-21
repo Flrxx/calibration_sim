@@ -8,6 +8,8 @@ import numpy as np
 from collections import deque
 import matplotlib
 import joystick 
+from ctypes import c_float
+import hayati_model
 
 class ShowRobot:
     def __init__(self, limits):
@@ -123,3 +125,37 @@ class ShowRobot:
     
     def close(self):
         plt.close(self.fig)
+
+    def is_open(self):
+        return plt.fignum_exists(self.fig.number)
+    
+
+def vizualize(model: hayati_model.HayatiModel, visualization_model="nominal"):
+    running = mp.Value("i", 1)
+    angles_values = mp.Array(c_float, 6)
+   
+    joystick_proc = mp.Process(target=joystick.joystick_process, args=(model.joint_limits_general_h, model.joint_limits_general_l, angles_values, running, visualization_model))
+    joystick_proc.start()
+    time.sleep(1)
+
+    robot_display = ShowRobot(model.cartesian_limits)
+    plot_update_interval = 0.0016/10 # more than 60 FPS
+    last_update_time = time.time()
+    while running:
+        current_time = time.time()
+        if current_time - last_update_time >= plot_update_interval:
+            coords_and_matrix = model.get_joint_coordinates_and_transition_matrix(angles_values, visualization_model)
+                
+            robot_display.update_robot(coords_and_matrix["coords"])
+            last_update_time = current_time
+
+            # Check if plot window is closed
+            if not robot_display.is_open():
+                running.value = 0
+                break
+            
+            # Small sleep to prevent CPU spinning
+            time.sleep(0.001)
+    joystick_proc.join()
+    joystick_proc.close()
+    pygame.quit()

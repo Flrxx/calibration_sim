@@ -4,13 +4,6 @@ from math import cos, sin, pi, sqrt, atan2, asin, log10, acos, copysign
 from typing import Union
 from math_routines import x_rot, y_rot, z_rot, arbitrary_axis_rot, trans
 from robotic_transformations import dh_trans, hayati_trans
-import robot_visualization 
-import pygame
-import joystick 
-import argparse
-import json
-import time
-from ctypes import c_float
 import multiprocessing as mp
 
 class HayatiModel:
@@ -112,51 +105,22 @@ class HayatiModel:
             raise ValueError("type must be 'nominal', 'real' or 'estimated'")
         main_tf, tool = self.get_base_tool_tf(base_params, tool_params)
         result = {"coords": [], "transition_matrix": []}
-        result["coords"].append([main_tf[0][-1], main_tf[1][-1], main_tf[2][-1]])
+        result["coords"].append(main_tf[:3, 3])
 
         tfs = self.get_transforms(angles, params)
         for i, tf in enumerate(tfs):
             main_tf = main_tf @ tf
-            result["coords"].append([main_tf[0][-1], main_tf[1][-1], main_tf[2][-1]])
+            result["coords"].append(main_tf[:3, 3])
         
         result["transition_matrix"] = main_tf @ tool
         result["coords"].append([result["transition_matrix"][0][-1], result["transition_matrix"][1][-1], result["transition_matrix"][2][-1]])
 
         return result
-
-def vizualize(model: HayatiModel, visualization_model="nominal"):
-    running = mp.Value("i", 1)
-    angles_values = mp.Array(c_float, 6)
-   
-    joystick_proc = mp.Process(target=joystick.joystick_process, args=(model.joint_limits_general_h, model.joint_limits_general_l, angles_values, running, visualization_model))
-    joystick_proc.start()
-    time.sleep(1)
-
-    robot_display = robot_visualization.ShowRobot(model.cartesian_limits)
-    plot_update_interval = 0.016/10  # ~60 FPS
-    last_update_time = time.time()
-    while running:
-        current_time = time.time()
-        if current_time - last_update_time >= plot_update_interval:
-            coords_and_matrix = model.get_joint_coordinates_and_transition_matrix(angles_values, visualization_model)
-                
-            robot_display.update_robot(coords_and_matrix["coords"])
-            last_update_time = current_time
-            
-            # Small sleep to prevent CPU spinning
-            time.sleep(0.001)
-    pygame.quit()
-
-
-def main(args):
-    with open(args.config, 'r') as config_file:
-        config = json.load(config_file)
-    model = HayatiModel(config)
-    vizualize(model, "real")
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="ARM95.json")
-    parser.add_argument("-g", "--generate", help="Generate dataset for selected method. Default: false", type=bool, default=False)
-    args = parser.parse_args()
-    main(args)
+    
+    def satisfies_cartesian_limits(self, pose):
+        position = pose[:3, 3]
+        z_angle = acos(pose[:3, 2] @ [0, 0, 1])
+        return (position[0] > self.cartesian_limits[0][0] and position[0] < self.cartesian_limits[0][1] and \
+                position[1] > self.cartesian_limits[1][0] and position[1] < self.cartesian_limits[1][1] and \
+                position[2] > self.cartesian_limits[2][0] and position[2] < self.cartesian_limits[2][1] and \
+                abs(z_angle) < self.max_z_angle)

@@ -1,6 +1,7 @@
 import numpy as np
 from math import cos, sin, pi, sqrt, atan2, asin, log10, acos, copysign
 from typing import Union
+from scipy.spatial.transform import Rotation
 
 def x_rot (angle: Union[int, float]) -> np.ndarray:
     mat = np.array([[1, 0, 0, 0],
@@ -38,3 +39,7 @@ def trans(vector: np.ndarray) -> np.ndarray:
                     [0, 0, 1, vector[2]],
                     [0, 0, 0, 1]],dtype='float')
     return mat
+
+def extract_zyx_euler(mat: np.ndarray) -> np.ndarray:
+    r = Rotation.from_matrix(mat)
+    return r.as_euler('ZYX')
