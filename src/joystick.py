@@ -1,12 +1,14 @@
 import pygame
+from numpy import pi
+DEG = pi / 180
 
 class LinearJoystick:
     def __init__(self, x, y, width, height, limits, joystick_id):
         self.rect = pygame.Rect(x, y, width, height)
         self.knob_rect = pygame.Rect(x, y, 20, height)
         self.limits = limits  # [lower_limit, upper_limit]
-        self.lower_limit = limits[1]
-        self.upper_limit = limits[0]
+        self.lower_limit = limits[1] / DEG
+        self.upper_limit = limits[0] / DEG
         self.value = (self.lower_limit + self.upper_limit) / 2  # Start at middle
         self.dragging = False
         self.joystick_id = joystick_id
@@ -81,7 +83,7 @@ class JointJoysticks:
             height = 30
             joystick_i = LinearJoystick(x, y, width, height, [joysticks_limits_h[i], joysticks_limits_l[i]], i)
             if(i == 2 or i == 4):
-                joystick_i.value = 1.57
+                joystick_i.value = 90
                 joystick_i.update_knob_position_from_value()
             self.joysticks.append(joystick_i)
         self.font = pygame.font.Font(None, 36)
@@ -137,15 +139,15 @@ class JointJoysticks:
 
     def get_all_joystick_values(self):
         """Returns a list of current values from all joysticks"""
-        return [joystick.get_value() for joystick in self.joysticks]
+        return [joystick.get_value() * DEG for joystick in self.joysticks]
     
     def get_nominal_joint_values(self):
         """Returns a list of current values from all joysticks"""
-        return [joystick.get_value() for joystick in self.joysticks[:6]]
+        return [joystick.get_value() * DEG for joystick in self.joysticks[:6]]
     
     def get_real_joint_values(self):
         """Returns a list of current values from all joysticks"""
-        return [joystick.get_value() for joystick in self.joysticks[6:]]
+        return [joystick.get_value() * DEG for joystick in self.joysticks[6:]]
 
     def get_joystick_limits(self):
         """Returns a list of limits for all joysticks"""

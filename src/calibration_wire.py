@@ -7,12 +7,12 @@ import json
 import time
 import dataset_generation
 import hayati_model
+from dataset_generation import FIELDNAMES_OPTIONS, read_dataset
 
 def main(args):
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
     model = hayati_model.HayatiModel(config)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

@@ -6,6 +6,9 @@ from math_routines import x_rot, y_rot, z_rot, arbitrary_axis_rot, trans
 from robotic_transformations import dh_trans, hayati_trans
 import multiprocessing as mp
 
+BIG_NUMBER = 10e300
+DEG = np.pi / 180
+
 class HayatiModel:
     def __init__(self, config):
         self.optimization_method = config['optimization_method']
@@ -41,14 +44,16 @@ class HayatiModel:
         self.general_samples_number = config["general_samples_number"]
         self.circle_samples_number = config["circle_samples_number"]
 
-        self.zero_tracker_position = config["zero_tracker_position"]
+        #self.zero_tracker_position = config["zero_tracker_position"]
+        self.zero_wire_angles = np.array(config["zero_wire_angles"]) * DEG
 
-        self.measurable_params_mask = np.array([0, 1, 2, 3, 4, 5], dtype='int')
+        self.measurable_params_mask = np.array([0, 1, 2, 3, 4, 5], dtype='int') 
 
         self.identifiability_mask = np.ones(36, dtype='int')
         self.koef = 0.001
         self.lm_koef = 0.01
         self.norm = 10
+        self.precision = config["precision"]
         self.prev_norm = 0
         self.num_point = 0
     
@@ -88,7 +93,20 @@ class HayatiModel:
             main_tf = main_tf @ tf
         return main_tf @ tool
     
-    def get_joint_coordinates_and_transition_matrix(self, angles: Union[np.ndarray, list], type: str) -> np.ndarray:
+    def change_nominal_dh(self, parametr: str, eps: float):
+        letter, num = parametr.split("_")
+        num = int(num)
+        if letter == 'a':
+            i = 0
+        elif letter == 'alpha':
+            i = 1
+        elif letter == 'd' or letter == 'beta':
+            i = 2
+        elif letter == 'theta':
+            i = 3  
+        self.nominal_dh[num - 1][i] += eps
+    
+    def get_all_transition_matrixes(self, angles: Union[np.ndarray, list], type: str) -> np.ndarray:
         if type == 'estimated':
             params = self.estimated_dh
             tool_params = self.estimated_tool_params
@@ -104,18 +122,15 @@ class HayatiModel:
         else:
             raise ValueError("type must be 'nominal', 'real' or 'estimated'")
         main_tf, tool = self.get_base_tool_tf(base_params, tool_params)
-        result = {"coords": [], "transition_matrix": []}
-        result["coords"].append(main_tf[:3, 3])
+        transition_matrixes = [main_tf]
 
         tfs = self.get_transforms(angles, params)
         for i, tf in enumerate(tfs):
             main_tf = main_tf @ tf
-            result["coords"].append(main_tf[:3, 3])
+            transition_matrixes.append(main_tf)
         
-        result["transition_matrix"] = main_tf @ tool
-        result["coords"].append([result["transition_matrix"][0][-1], result["transition_matrix"][1][-1], result["transition_matrix"][2][-1]])
-
-        return result
+        transition_matrixes.append(main_tf @ tool)
+        return transition_matrixes
     
     def satisfies_cartesian_limits(self, pose):
         position = pose[:3, 3]
@@ -124,3 +139,10 @@ class HayatiModel:
                 position[1] > self.cartesian_limits[1][0] and position[1] < self.cartesian_limits[1][1] and \
                 position[2] > self.cartesian_limits[2][0] and position[2] < self.cartesian_limits[2][1] and \
                 abs(z_angle) < self.max_z_angle)
+    
+    # Metrics and validation routines
+    def init_metrics(self):
+        self.cond = None
+        self.norm = None
+        self.max_x_error = self.max_y_error = self.max_z_error = self.max_dist_error = 0
+        self.min_x_error = self.min_y_error = self.min_z_error = self.min_dist_error = BIG_NUMBER

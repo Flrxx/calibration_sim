@@ -8,11 +8,10 @@ import time
 from matplotlib import pyplot as plt
 import numpy as np
 from collections import deque
-import matplotlib
 import joystick 
 from ctypes import c_float
 import hayati_model
-from dataset_generation import read_dataset, FIELDNAMES_OPTIONS
+from dataset_generation_absolute import read_dataset, FIELDNAMES_OPTIONS
 
 class ShowRobot:
     def __init__(self):
@@ -46,11 +45,15 @@ class ShowRobot:
         # Initialize plots for all points
         self.current_points = []
         self.connection_lines = []
+        self.tool_axis = []
 
         # Add joint values text annotation (top-left)
         self.joint_text = self.fig.text(0.02, 0.8, '', transform=self.fig.transFigure, 
                                        fontsize=11, fontfamily='monospace', fontweight='bold',
                                        bbox=dict(boxstyle="round,pad=0.4", facecolor="lightblue", alpha=0.9))
+
+        self.axis_colors = ['red', 'green', 'blue']
+        self.axis_labels = ['X', 'Y', 'Z']
 
         # Trajectory line
         self.trajectory_line, = self.ax.plot([], [], [], "purple", alpha=0.7, linewidth=1.0)
@@ -68,14 +71,25 @@ class ShowRobot:
                                     linewidth=2.0,
                                     label=f'P{i+1}-P{i+2}' if i == 0 else "")
             self.connection_lines.append(conn_line)
-        
-        # Add legend
-        #self.ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+
+        # Draw base frame
+        original_axes = np.eye(3) * 0.2
+        last_trans_matrix = np.eye(4)
+        R = last_trans_matrix[:3, :3]
+        rotated_axes = R @ original_axes
+        for i in range(3):
+            self.ax.quiver(0, 0, 0,
+                    rotated_axes[0, i], rotated_axes[1, i], rotated_axes[2, i],
+                    color=self.axis_colors[i], label=self.axis_labels[i], linewidth=2,
+                    arrow_length_ratio=0.1)
         
         # Initial draw
         self.fig.canvas.draw()
         
-    def update_robot(self, points_coords, joint_values):
+    def update_robot(self, matrixes, joint_values):
+        points_coords = [m[:3, 3] for m in matrixes]
+        # for i in range(8):
+        #     points_coords.append(matrixes[i][:3, 3])
         
         # Update trajectory lines
         self.trajectory.append(points_coords[-1])
@@ -107,7 +121,24 @@ class ShowRobot:
             # Calculate segment length
             segment_length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
             total_length += segment_length
-        
+  
+        # Draw each axis
+        axis_length = 0.1
+        original_axes = np.eye(3) * axis_length
+        R = matrixes[-1][:3, :3]
+        rotated_axes = R @ original_axes
+
+        for axis in self.tool_axis:
+            if axis in self.ax.collections:
+                axis.remove()
+        self.tool_axis.clear()
+        for i in range(3):
+            axis = self.ax.quiver(points_coords[-1][0], points_coords[-1][1], points_coords[-1][2],
+                            rotated_axes[0, i], rotated_axes[1, i], rotated_axes[2, i],
+                            color=self.axis_colors[i], label=self.axis_labels[i], linewidth=2,
+                            arrow_length_ratio=0.5)
+            self.tool_axis.append(axis)
+                    
         if hasattr(self, 'last_title_update'):
             if time.time() - self.last_title_update > 0.2:  # Update title every 200ms
                 self.ax.set_title(f'X: {points_coords[-1][0]:.3f}, Y: {points_coords[-1][1]:.3f}, Z: {points_coords[-1][2]:.3f}')
@@ -140,8 +171,8 @@ class ShowRobot:
         return plt.fignum_exists(self.fig.number)
 
 def visualize_pose(model: hayati_model.HayatiModel, plot: ShowRobot, angles_values: Union[np.ndarray, list], model_type):
-    coords_and_matrix = model.get_joint_coordinates_and_transition_matrix(angles_values, model_type)
-    plot.update_robot(coords_and_matrix["coords"], angles_values)
+    matrixes = model.get_all_transition_matrixes(angles_values, model_type)
+    plot.update_robot(matrixes, angles_values)
 
 def vizualize_forward_kinematics(model: hayati_model.HayatiModel, model_type="nominal"):
     running = mp.Value("i", 1)
