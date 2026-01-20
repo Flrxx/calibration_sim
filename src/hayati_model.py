@@ -34,6 +34,8 @@ class HayatiModel:
         
         self.joint_limits_general_h = config["joint_limits_general_h"]
         self.joint_limits_general_l = config["joint_limits_general_l"]
+        self.bounds = [(self.joint_limits_general_l[i], self.joint_limits_general_h[i]) for i in range(6)]
+
 
         self.joint_limits_circle_h = config["joint_limits_circle_h"]
         self.joint_limits_circle_l = config["joint_limits_circle_l"]
@@ -46,6 +48,8 @@ class HayatiModel:
 
         #self.zero_tracker_position = config["zero_tracker_position"]
         self.zero_wire_angles = np.array(config["zero_wire_angles"]) * DEG
+        self.jac_DH_0 = 0
+        self.zero_offset_real = self.get_transition_matrix(self.zero_wire_angles, "real")[0:3, 3]
 
         self.measurable_params_mask = np.array([0, 1, 2, 3, 4, 5], dtype='int') 
 
@@ -95,7 +99,7 @@ class HayatiModel:
     
     def change_nominal_dh(self, parametr: str, eps: float):
         letter, num = parametr.split("_")
-        num = int(num)
+        num = int(num) - 1
         if letter == 'a':
             i = 0
         elif letter == 'alpha':
@@ -104,7 +108,7 @@ class HayatiModel:
             i = 2
         elif letter == 'theta':
             i = 3  
-        self.nominal_dh[num - 1][i] += eps
+        self.nominal_dh[num][i] += eps
     
     def get_all_transition_matrixes(self, angles: Union[np.ndarray, list], type: str) -> np.ndarray:
         if type == 'estimated':
