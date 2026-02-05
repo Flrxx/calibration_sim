@@ -1,6 +1,7 @@
 import csv
 import argparse
 import json
+import os
 import numpy as np
 from math import sqrt
 from random import uniform
@@ -8,6 +9,7 @@ from math_routines import extract_zyx_euler
 import hayati_model
 from typing import Union
 from scipy.optimize import minimize
+from csv_routines import write_dataset, add_line_csv, read_dataset
 
 np.set_printoptions(precision=3, suppress=True, formatter={'all': lambda x: f'{x:0.3f}'})
 
@@ -19,13 +21,6 @@ FIELDNAMES_OPTIONS = {
 }
 
 DEG = np.pi / 180
-
-def write_dataset(dataset: np.ndarray, filename: str, fieldnames: list[str], tolerance=".8f"):
-    with open(filename, 'w', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in dataset:
-            writer.writerow({name: f"{row[index]:{tolerance}}" for index, name in enumerate(fieldnames)})
 
 def measure_distance(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray], abs_tolerance = 0.0005):
     [x, y, z] = model.get_transition_matrix(angles, "real")[0:3, 3]
@@ -96,9 +91,7 @@ def calculate_optimal_position(model: hayati_model.HayatiModel, i_target: int, a
     else:
         return([None for _ in range(6)])
     
-def generate_single_layer(model: hayati_model.HayatiModel, i_target: int, user_joint_mask, tries_num, prev_eps, future_eps, angle_diff=5):
-    error_letter, error_num = ERRORS_LIST[i_target].split("_")
-    error_num = int(error_num) - 1
+def generate_single_layer(model: hayati_model.HayatiModel, i_target: int, user_joint_mask, tries_num, prev_eps, future_eps, angle_diff):
     samples = []
     samples_contributions = []
     angles = model.zero_wire_angles.copy()
@@ -111,20 +104,34 @@ def generate_single_layer(model: hayati_model.HayatiModel, i_target: int, user_j
 
         new_sample = calculate_optimal_position(model, i_target, angles, bounds, prev_eps, future_eps)
         if(new_sample[0] != None):
-            if has_difference(samples, new_sample, angle_diff*DEG):
-                samples.append(new_sample)
-                single_contribution = calculate_contribution(model, new_sample)
-                samples_contributions.append(single_contribution)
+            similar_index = get_similar_index(samples, new_sample, angle_diff*DEG)
+            single_contribution = calculate_contribution(model, new_sample)
+            if abs(single_contribution[i_target]) < future_eps:
+                continue
+            if similar_index == None:
+                samples.append(new_sample.copy())
+                samples_contributions.append(single_contribution.copy())
+            else:
+                
+                if abs(single_contribution[i_target]) > abs(samples_contributions[similar_index][i_target]):
+                    samples[similar_index] = new_sample.copy()
+                    samples_contributions[similar_index] = single_contribution.copy()
 
     return {"samples": samples, "contributions": samples_contributions}
 
-def has_difference(samples, new_sample: np.ndarray, delta):
+def get_similar_index(samples, new_sample: np.ndarray, delta):     
     if len(samples) == 0:
-        return True    
+        return None
+    
     samples_array = np.array(samples)
     diffs = np.abs(samples_array - new_sample)
-    is_similar = np.any(np.all(diffs <= delta, axis=1))
-    return not is_similar
+    
+    # This creates a boolean array where True means the row is similar
+    is_similar_mask = np.all(diffs <= delta, axis=1)
+    if not np.any(is_similar_mask):
+        return None
+    
+    return np.argmax(is_similar_mask)
 
 def generate_dataset(model: hayati_model.HayatiModel):
     print("Generating wire dataset...")
@@ -143,14 +150,11 @@ def generate_optimal_dataset(model: hayati_model.HayatiModel, disable_limits=Fal
         dataset[i] = make_optimal_sample(model, disable_limits)
     return dataset
 
-def test_contribution(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray]):
-    print(calculate_contribution(model, angles))
-
-def test_generation(model: hayati_model.HayatiModel, i_target: int, user_joint_mask, max_tries=100, prev_eps=0.0005, future_eps=0.0005):
-    res = generate_single_layer(model, i_target, user_joint_mask, tries_num=max_tries, prev_eps=prev_eps, future_eps=future_eps)
+def generate_samples(model: hayati_model.HayatiModel, i_target: int, user_joint_mask, max_tries=100, prev_eps=0.0005, future_eps=0.0004, angle_diff=5):
+    res = generate_single_layer(model, i_target, user_joint_mask, max_tries, prev_eps, future_eps, angle_diff)
     printable_res = [np.concatenate((s / DEG, c.flatten())).tolist() for s, c in zip(res["samples"], res["contributions"])]
-    printable_res.sort(key = lambda x: -abs(x[6 + i_target]))
-    write_dataset(printable_res, "output.csv", FIELDNAMES_OPTIONS["wire"], tolerance = ".3f")
+    printable_res.sort(key = lambda x: -(x[6 + i_target]))
+    write_dataset(printable_res, "datasets/ARM95/wire/generation_output.csv", FIELDNAMES_OPTIONS["wire"], tolerance = ".3f")
     print("Done")
  
 def main(args):
@@ -159,15 +163,26 @@ def main(args):
     model = hayati_model.HayatiModel(config)
     model.jac_DH_0 = calculate_jac_DH_params(model, model.zero_wire_angles)
 
-    #angles = np.array([0 * DEG, 36.1 * DEG, 96.8 * DEG, -90 * DEG, 90 * DEG, 0 * DEG])
-    #test_contribution(model, angles)
+    mode = "find"
+    #mode = "check"
 
-    user_joint_mask = np.array([0, 0, 0, 1, 1, 1])
-    i_target = 0
-    max_tries = 30
-    prev_eps = 0.0005
-    #future_eps = 0.0005
-    test_generation(model, i_target, user_joint_mask, max_tries=max_tries, prev_eps=prev_eps) 
+    if mode == "find":
+        print("generation_output.csv will be erased, continue? y/n")
+        ans = input()
+        if ans == 'y':
+            user_joint_mask = np.array([0, 0, 0, 0, 1, 1])
+            i_target = 0
+            max_tries = 2000
+            prev_eps = 0.0005
+            #future_eps = 0.0005  
+            angle_diff = 5
+            generate_samples(model, i_target, user_joint_mask, max_tries=max_tries, prev_eps=prev_eps, angle_diff=angle_diff) 
+
+    elif mode == "check":
+        angles = np.array([0 * DEG, 36.1 * DEG, 96.8 * DEG, -90 * DEG, -41.976 * DEG, -81.238 * DEG])
+        contribution = calculate_contribution(model, angles)
+        add_line_csv(np.concatenate((angles / DEG, contribution.flatten())).tolist(),"datasets/ARM95/wire/general_dataset.csv", FIELDNAMES_OPTIONS['wire'], ".3f")
+        print("Done")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

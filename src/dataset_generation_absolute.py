@@ -6,6 +6,7 @@ from random import random
 from math_routines import extract_zyx_euler
 import hayati_model
 from typing import Union
+from csv_routines import write_dataset, add_line_csv, read_dataset
 
 
 FIELDNAMES_OPTIONS = {
@@ -20,13 +21,6 @@ def generate_dataset(model: hayati_model.HayatiModel):
     write_dataset(generate_base_circles_dataset(model), model.base_circles_dataset_file, FIELDNAMES_OPTIONS["circles"])
     write_dataset(generate_tool_circles_dataset(model), model.tool_circles_dataset_file, FIELDNAMES_OPTIONS["circles"])
     print('Done')
-
-def write_dataset(dataset: np.ndarray, filename: str, fieldnames: list[str]):
-    with open(filename, 'w', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in dataset:
-            writer.writerow({name: row[index] for index, name in enumerate(fieldnames)})
 
 # def optimal_random_dataset(model, samples_num):
 #     backup_base = model.nominal_base_params.copy()
@@ -80,14 +74,6 @@ def make_circle(model, axis, initial_position):
         real_position = model.get_transition_matrix(angles, 'real')[:3, 3]
         dataset = np.concatenate((dataset, np.concatenate((angles, real_position, [axis]), axis=0).reshape(1, -1)), axis=0)
         angles[axis - 1] += inc
-    return dataset
-
-def read_dataset(filename: str, fieldnames: list[str]) -> Union[np.ndarray, np.ndarray]:
-    dataset = np.array([], dtype='float').reshape(0, len(fieldnames))
-    with open(filename, newline='') as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            dataset = np.concatenate((dataset, np.array([float(row[field]) for field in fieldnames]).reshape(1, -1)), axis=0)
     return dataset
 
 def main(args):

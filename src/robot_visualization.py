@@ -11,7 +11,11 @@ from collections import deque
 import joystick 
 from ctypes import c_float
 import hayati_model
-from dataset_generation_absolute import read_dataset, FIELDNAMES_OPTIONS
+#from dataset_generation_absolute import read_dataset, FIELDNAMES_OPTIONS
+from dataset_generation_wire import FIELDNAMES_OPTIONS
+from csv_routines import read_dataset
+
+DEG = np.pi / 180
 
 class ShowRobot:
     def __init__(self):
@@ -71,6 +75,8 @@ class ShowRobot:
                                     linewidth=2.0,
                                     label=f'P{i+1}-P{i+2}' if i == 0 else "")
             self.connection_lines.append(conn_line)
+
+        # Draw wire
 
         # Draw base frame
         original_axes = np.eye(3) * 0.2
@@ -221,7 +227,7 @@ def visualize_dataset(model: hayati_model.HayatiModel, dataset, model_type):
     while True:
         current_time = time.time()
         if (current_time - last_update_time) >= plot_update_interval:
-            visualize_pose(model, robot_display, dataset[num.value][:6], model_type)
+            visualize_pose(model, robot_display, np.array(dataset[num.value][:6]) * DEG, model_type)
             last_update_time = current_time
 
             # Check if plot window is closed
@@ -239,7 +245,7 @@ def main(args):
         if ("circle" in args.dataset):
             dataset = read_dataset(args.dataset, FIELDNAMES_OPTIONS["circles"])
         else:
-            dataset = read_dataset(args.dataset, FIELDNAMES_OPTIONS["random"])
+            dataset = read_dataset(args.dataset, FIELDNAMES_OPTIONS["wire"])
         visualize_dataset(model, dataset, args.model_type)
     else:
         raise ValueError("visualization_type should be 'forward_kinematics' or 'dataset'")

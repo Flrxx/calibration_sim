@@ -1,25 +1,22 @@
-import csv
-from itertools import zip_longest
+def custom_sort(dataset, i, j):
+    # This creates a key that looks like:
+    # (row[i], row[j], row[j-1], row[j-2], ..., row[0])
+    
+    dataset.sort(key=lambda row: (
+        row[i], 
+        row[j], 
+        *[row[k] for k in range(j - 1, -1, -1)]
+    ))
+    return dataset
 
-data = {
-    "a": [[1, 2], [3, 4], [5, 6]], 
-    "b": [[10, 11], [12, 13]]
-}
+data = [
+    [1, 10, 5, 2],
+    [0, 10, 5, 2],
+    [1, 5,  5, 2],
+    [1, 10, 5, 1]
+]
 
-# 1. Prepare headers
-# We want: [Header A, Spacer, Header B]
-headers = ["Column A", "", "Column B"]
-
-with open("output.csv", "w", newline="") as f:
-    writer = csv.writer(f)
-    writer.writerow(headers)
-
-    # 2. Use zip_longest to handle cases where 'a' and 'b' have different lengths
-    # fillvalue=[] ensures we don't crash if one list is shorter than the other
-    for row_a, row_b in zip_longest(data["a"], data["b"], fillvalue=[]):
-        # We join the inner lists into strings to keep them in one cell
-        val_a = ", ".join(map(str, row_a))
-        val_b = ", ".join(map(str, row_b))
-        
-        # 3. Write the row with an empty string in the middle for the "gap" column
-        writer.writerow([val_a, "", val_b])
+# Sort by index 3, then 1, then 0
+# i = 3, j = 1
+sorted_data = custom_sort(data, 3, 1)
+print(sorted_data)
