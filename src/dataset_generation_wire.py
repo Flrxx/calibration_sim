@@ -16,17 +16,11 @@ np.set_printoptions(precision=3, suppress=True, formatter={'all': lambda x: f'{x
 ERRORS_LIST = ['theta_6', 'd_6', 'theta_5', 'theta_4', 'a_3', 'd_4', 'a_2', 'theta_3', 'theta_2', 'a_1']
 
 FIELDNAMES_OPTIONS = {
-    "wire" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', *ERRORS_LIST],
-    "circles": ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'px_r', 'py_r', 'pz_r', 'joint'],
+    "wire_contributions" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'index', *ERRORS_LIST],
+    "wire_samples": ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'index', 'd'],
 }
 
 DEG = np.pi / 180
-
-def measure_distance(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray], abs_tolerance = 0.0005):
-    [x, y, z] = model.get_transition_matrix(angles, "real")[0:3, 3]
-    distance = sqrt((x - model.zero_offset_real[0])^2 + (y - model.zero_offset_real[1])^2 + (z - model.zero_offset_real[2])^2)
-    distance *= 1 + uniform(-1, 1) * abs_tolerance
-    return distance
 
 def calculate_jac_DH_params(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray], eps = 1e-6):
     jac_DH = np.zeros((3, len(ERRORS_LIST)))
@@ -133,46 +127,48 @@ def get_similar_index(samples, new_sample: np.ndarray, delta):
     
     return np.argmax(is_similar_mask)
 
-def generate_dataset(model: hayati_model.HayatiModel):
-    print("Generating wire dataset...")
-    write_dataset(generate_optimal_dataset(model), model.dataset_file, FIELDNAMES_OPTIONS["wire"])
-    print('Done')
-
-def generate_optimal_dataset(model: hayati_model.HayatiModel, disable_limits=False):
-    dataset = np.zeros((model.general_samples_number, len(FIELDNAMES_OPTIONS["wire"])))
-    for i in range(ERRORS_LIST):
-        
-        for j in range(6):                      # Single dataset layer
-            generate_single_layer()
-            calculate_optimal_position(model, )
-
-    for i in range(model.general_samples_number):
-        dataset[i] = make_optimal_sample(model, disable_limits)
-    return dataset
-
 def generate_samples(model: hayati_model.HayatiModel, i_target: int, user_joint_mask, max_tries=100, prev_eps=0.0005, future_eps=0.0004, angle_diff=5):
     res = generate_single_layer(model, i_target, user_joint_mask, max_tries, prev_eps, future_eps, angle_diff)
-    printable_res = [np.concatenate((s / DEG, c.flatten())).tolist() for s, c in zip(res["samples"], res["contributions"])]
-    printable_res.sort(key = lambda x: -(x[6 + i_target]))
-    write_dataset(printable_res, "datasets/ARM95/wire/generation_output.csv", FIELDNAMES_OPTIONS["wire"], tolerance = ".3f")
-    print("Done")
- 
+    printable_res = [np.concatenate((s / DEG, [i_target], c.flatten())).tolist() for s, c in zip(res["samples"], res["contributions"])]
+    printable_res.sort(key = lambda x: -abs(x[7 + i_target]))
+    write_dataset(printable_res, "datasets/ARM95/wire/generation_output.csv", FIELDNAMES_OPTIONS["wire_contributions"], tolerance = ".3f")
+
+def measure_real_distance(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray], abs_tolerance=0.08/100, resolution=0.05/1000):
+    [x, y, z] = model.get_transition_matrix(angles, "real")[0:3, 3]
+    distance = sqrt((x - model.zero_offset_real[0])**2 + (y - model.zero_offset_real[1])**2 + (z - model.zero_offset_real[2])**2)
+    distance *= 1 + uniform(-1, 1) * abs_tolerance       # fit tolerance
+    distance = round(distance / resolution) * resolution # fit resolution
+    return distance
+
+def measure_all_distances(model: hayati_model.HayatiModel, dataset_contributions: str):
+    dataset = read_dataset(dataset_contributions, FIELDNAMES_OPTIONS['wire_contributions'])[:, 0:8]
+    dataset[:, 0:6] *= DEG
+    for sample in dataset:
+        sample[7] = measure_real_distance(model, sample[0:6])
+    return dataset
+
+def make_calibration_dataset(model: hayati_model.HayatiModel, dataset_contributions: str, calibration_dataset="datasets/ARM95/wire/calibration_dataset.csv"):
+    dataset = measure_all_distances(model, dataset_contributions)
+    dataset[:, 0:6] /= DEG
+    write_dataset(dataset, calibration_dataset, FIELDNAMES_OPTIONS["wire_samples"], tolerance=".6f") 
+
 def main(args):
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
     model = hayati_model.HayatiModel(config)
     model.jac_DH_0 = calculate_jac_DH_params(model, model.zero_wire_angles)
 
-    mode = "find"
+    #mode = "find"
     #mode = "check"
+    mode = "distances"
 
     if mode == "find":
         print("generation_output.csv will be erased, continue? y/n")
         ans = input()
         if ans == 'y':
             user_joint_mask = np.array([0, 0, 0, 0, 1, 1])
-            i_target = 0
-            max_tries = 2000
+            i_target = 1
+            max_tries = 1000
             prev_eps = 0.0005
             #future_eps = 0.0005  
             angle_diff = 5
@@ -181,8 +177,12 @@ def main(args):
     elif mode == "check":
         angles = np.array([0 * DEG, 36.1 * DEG, 96.8 * DEG, -90 * DEG, -41.976 * DEG, -81.238 * DEG])
         contribution = calculate_contribution(model, angles)
-        add_line_csv(np.concatenate((angles / DEG, contribution.flatten())).tolist(),"datasets/ARM95/wire/general_dataset.csv", FIELDNAMES_OPTIONS['wire'], ".3f")
-        print("Done")
+        add_line_csv(np.concatenate((angles / DEG, [0], contribution.flatten())).tolist(),"datasets/ARM95/wire/contribution_dataset.csv", FIELDNAMES_OPTIONS['wire_contributions'], ".3f")
+        
+    elif mode == "distances":
+        make_calibration_dataset(model, dataset_contributions="datasets/ARM95/wire/contribution_dataset.csv")
+
+    print("Done")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

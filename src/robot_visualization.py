@@ -11,7 +11,6 @@ from collections import deque
 import joystick 
 from ctypes import c_float
 import hayati_model
-#from dataset_generation_absolute import read_dataset, FIELDNAMES_OPTIONS
 from dataset_generation_wire import FIELDNAMES_OPTIONS
 from csv_routines import read_dataset
 
@@ -52,8 +51,12 @@ class ShowRobot:
         self.tool_axis = []
 
         # Add joint values text annotation (top-left)
-        self.joint_text = self.fig.text(0.02, 0.8, '', transform=self.fig.transFigure, 
-                                       fontsize=11, fontfamily='monospace', fontweight='bold',
+        self.joint_text = self.fig.text(0.02, 0.7, '', transform=self.fig.transFigure, 
+                                       fontsize=18, fontfamily='monospace', fontweight='bold',
+                                       bbox=dict(boxstyle="round,pad=0.4", facecolor="lightblue", alpha=0.9))
+        
+        self.dataset_info = self.fig.text(0.02, 0.4, '', transform=self.fig.transFigure, 
+                                       fontsize=14, fontfamily='monospace', fontweight='bold',
                                        bbox=dict(boxstyle="round,pad=0.4", facecolor="lightblue", alpha=0.9))
 
         self.axis_colors = ['red', 'green', 'blue']
@@ -77,6 +80,14 @@ class ShowRobot:
             self.connection_lines.append(conn_line)
 
         # Draw wire
+        self.zero_wire_pos = np.zeros(3)
+        self.zero_wire_dir = np.eye(3) * 0.1
+        self.wire_point = self.ax.scatter([0], [0], [0], c='purple', 
+                                  s=80, marker='o', 
+                                  label='')
+        self.wire_line, = self.ax.plot([], [], [], 'purple', alpha=1, 
+                                    linewidth=3.0,
+                                    label="")
 
         # Draw base frame
         original_axes = np.eye(3) * 0.2
@@ -86,13 +97,13 @@ class ShowRobot:
         for i in range(3):
             self.ax.quiver(0, 0, 0,
                     rotated_axes[0, i], rotated_axes[1, i], rotated_axes[2, i],
-                    color=self.axis_colors[i], label=self.axis_labels[i], linewidth=2,
-                    arrow_length_ratio=0.1)
+                    color=self.axis_colors[i], label=self.axis_labels[i], linewidth=1,
+                    arrow_length_ratio=0.05)
         
         # Initial draw
         self.fig.canvas.draw()
         
-    def update_robot(self, matrixes, joint_values):
+    def update_robot(self, matrixes, joint_values, real_distance: float, index: int):
         points_coords = [m[:3, 3] for m in matrixes]
         # for i in range(8):
         #     points_coords.append(matrixes[i][:3, 3])
@@ -127,7 +138,22 @@ class ShowRobot:
             # Calculate segment length
             segment_length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
             total_length += segment_length
-  
+
+        # Wire
+        if real_distance != 0:
+            x1, y1, z1 = self.zero_wire_pos
+            x2, y2, z2 = points_coords[7]  
+
+            self.wire_point._offsets3d = ([x1], [y1], [z1])
+            self.wire_line.set_data([x1, x2], [y1, y2])
+            self.wire_line.set_3d_properties([z1, z2])
+            drawed_len = np.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
+
+            self.wire_axis = self.ax.quiver(x1, y1, z1,
+                            self.zero_wire_dir[0, 2], self.zero_wire_dir[1, 2], self.zero_wire_dir[2, 2],
+                            color="purple", label='', linewidth=1,
+                            arrow_length_ratio=0.5)
+    
         # Draw each axis
         axis_length = 0.1
         original_axes = np.eye(3) * axis_length
@@ -141,7 +167,7 @@ class ShowRobot:
         for i in range(3):
             axis = self.ax.quiver(points_coords[-1][0], points_coords[-1][1], points_coords[-1][2],
                             rotated_axes[0, i], rotated_axes[1, i], rotated_axes[2, i],
-                            color=self.axis_colors[i], label=self.axis_labels[i], linewidth=2,
+                            color=self.axis_colors[i], label=self.axis_labels[i], linewidth=1,
                             arrow_length_ratio=0.5)
             self.tool_axis.append(axis)
                     
@@ -153,8 +179,11 @@ class ShowRobot:
             self.ax.set_title(f'X: {points_coords[-1][0]:.3f}, Y: {points_coords[-1][1]:.3f}, Z: {points_coords[-1][2]:.3f}')
             self.last_title_update = time.time()
 
-        joint_info = f"JOINT VALUES:\nJ1: {joint_values[0]:.3f}\nJ2: {joint_values[1]:.3f}\nJ3: {joint_values[2]:.3f}\nJ4: {joint_values[3]:.3f}\nJ5: {joint_values[4]:.3f}\nJ6: {joint_values[5]:.3f}"
+        joint_info = f"Joint values:\nJ1: {joint_values[0]/DEG:.3f}°\nJ2: {joint_values[1]/DEG:.3f}°\nJ3: {joint_values[2]/DEG:.3f}°\nJ4: {joint_values[3]/DEG:.3f}°\nJ5: {joint_values[4]/DEG:.3f}°\nJ6: {joint_values[5]/DEG:.3f}°"
         self.joint_text.set_text(joint_info)
+        if real_distance != 0:
+            dataset_text = f"Real distance: {real_distance*1000:.3f} mm\nDrawed distance: {drawed_len*1000:.3f} mm\nIndex: {index}"
+            self.dataset_info.set_text(dataset_text)
 
         # Use blitting for faster updates
         try:
@@ -176,9 +205,9 @@ class ShowRobot:
     def is_open(self):
         return plt.fignum_exists(self.fig.number)
 
-def visualize_pose(model: hayati_model.HayatiModel, plot: ShowRobot, angles_values: Union[np.ndarray, list], model_type):
+def visualize_pose(model: hayati_model.HayatiModel, plot: ShowRobot, angles_values: Union[np.ndarray, list], model_type, real_distance=0.0, index=0):
     matrixes = model.get_all_transition_matrixes(angles_values, model_type)
-    plot.update_robot(matrixes, angles_values)
+    plot.update_robot(matrixes, angles_values, real_distance, index)
 
 def vizualize_forward_kinematics(model: hayati_model.HayatiModel, model_type="nominal"):
     running = mp.Value("i", 1)
@@ -215,8 +244,12 @@ def on_key_press(event, counter, max):
         if(counter.value > 0):
             counter.value -= 1
 
-def visualize_dataset(model: hayati_model.HayatiModel, dataset, model_type):
+def visualize_dataset(model: hayati_model.HayatiModel, dataset, model_type, wire=True):
     robot_display = ShowRobot()
+    robot_display.zero_wire_pos = model.get_transition_matrix(model.zero_wire_angles, model_type)[0:3, 3]
+    R = model.get_transition_matrix(model.zero_wire_angles, model_type)[:3, :3]
+    robot_display.zero_wire_dir = -(R @ robot_display.zero_wire_dir) 
+
     num = mp.Value('i', 0)
     robot_display.fig.canvas.mpl_connect('key_press_event', 
                                 lambda event: on_key_press(event, num, len(dataset) - 1))
@@ -227,7 +260,7 @@ def visualize_dataset(model: hayati_model.HayatiModel, dataset, model_type):
     while True:
         current_time = time.time()
         if (current_time - last_update_time) >= plot_update_interval:
-            visualize_pose(model, robot_display, np.array(dataset[num.value][:6]) * DEG, model_type)
+            visualize_pose(model, robot_display, np.array(dataset[num.value][:6]) * DEG, model_type, dataset[num.value][7], int(dataset[num.value][6]))
             last_update_time = current_time
 
             # Check if plot window is closed
@@ -242,10 +275,10 @@ def main(args):
     if args.visualization_type == "forward_kinematics":
         vizualize_forward_kinematics(model, args.model_type)
     elif args.visualization_type == "dataset":
-        if ("circle" in args.dataset):
-            dataset = read_dataset(args.dataset, FIELDNAMES_OPTIONS["circles"])
+        if ("calibration" in args.dataset):
+            dataset = read_dataset(args.dataset, FIELDNAMES_OPTIONS["wire_samples"])
         else:
-            dataset = read_dataset(args.dataset, FIELDNAMES_OPTIONS["wire"])
+            dataset = read_dataset(args.dataset, FIELDNAMES_OPTIONS["wire_contributions"])
         visualize_dataset(model, dataset, args.model_type)
     else:
         raise ValueError("visualization_type should be 'forward_kinematics' or 'dataset'")

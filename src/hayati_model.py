@@ -5,6 +5,7 @@ from typing import Union
 from math_routines import x_rot, y_rot, z_rot, arbitrary_axis_rot, trans
 from robotic_transformations import dh_trans, hayati_trans
 import multiprocessing as mp
+import copy
 
 BIG_NUMBER = 10e300
 DEG = np.pi / 180
@@ -22,9 +23,13 @@ class HayatiModel:
         self.nominal_base_params = config['nominal_base_params']
         self.nominal_tool_params = config['nominal_tool_params']
         
-        self.estimated_dh = self.nominal_dh.copy()
-        self.estimated_base_params = self.nominal_base_params.copy()
-        self.estimated_tool_params = self.nominal_tool_params.copy()
+        self.estimated_dh = copy.deepcopy(self.nominal_dh)
+        self.estimated_base_params = copy.deepcopy(self.nominal_base_params)
+        self.estimated_tool_params = copy.deepcopy(self.nominal_tool_params)
+
+        # self.estimated_dh = self.nominal_dh.copy()
+        # self.estimated_base_params = self.nominal_base_params.copy()
+        # self.estimated_tool_params = self.nominal_tool_params.copy()
         
         self.real_dh = config['real_dh']
         self.real_base_params = config['real_base_params']
@@ -97,7 +102,7 @@ class HayatiModel:
             main_tf = main_tf @ tf
         return main_tf @ tool
     
-    def change_nominal_dh(self, parametr: str, eps: float):
+    def params_from_letters(self, parametr: str):
         letter, num = parametr.split("_")
         num = int(num) - 1
         if letter == 'a':
@@ -108,6 +113,10 @@ class HayatiModel:
             i = 2
         elif letter == 'theta':
             i = 3  
+        return (num, i)     # 2, alpha
+
+    def change_nominal_dh(self, parametr: str, eps: float):
+        (num, i) = self.params_from_letters(parametr)
         self.nominal_dh[num][i] += eps
     
     def get_all_transition_matrixes(self, angles: Union[np.ndarray, list], type: str) -> np.ndarray:
