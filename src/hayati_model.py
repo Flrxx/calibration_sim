@@ -54,7 +54,9 @@ class HayatiModel:
         #self.zero_tracker_position = config["zero_tracker_position"]
         self.zero_wire_angles = np.array(config["zero_wire_angles"]) * DEG
         self.jac_DH_0 = 0
+        self.zero_offset_nominal = self.get_transition_matrix(self.zero_wire_angles, "nominal")[0:3, 3]
         self.zero_offset_real = self.get_transition_matrix(self.zero_wire_angles, "real")[0:3, 3]
+        self.zero_wire_direction = -(self.get_transition_matrix(self.zero_wire_angles, "nominal")[:3, :3] @ np.eye(3))[:, 2]
 
         self.measurable_params_mask = np.array([0, 1, 2, 3, 4, 5], dtype='int') 
 

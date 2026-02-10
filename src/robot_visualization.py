@@ -81,7 +81,7 @@ class ShowRobot:
 
         # Draw wire
         self.zero_wire_pos = np.zeros(3)
-        self.zero_wire_dir = np.eye(3) * 0.1
+        self.zero_wire_direction = np.eye(3) * 0.1
         self.wire_point = self.ax.scatter([0], [0], [0], c='purple', 
                                   s=80, marker='o', 
                                   label='')
@@ -140,19 +140,19 @@ class ShowRobot:
             total_length += segment_length
 
         # Wire
-        if real_distance != 0:
-            x1, y1, z1 = self.zero_wire_pos
-            x2, y2, z2 = points_coords[7]  
+        #if real_distance != 0:
+        x1, y1, z1 = self.zero_wire_pos
+        x2, y2, z2 = points_coords[7]  
 
-            self.wire_point._offsets3d = ([x1], [y1], [z1])
-            self.wire_line.set_data([x1, x2], [y1, y2])
-            self.wire_line.set_3d_properties([z1, z2])
-            drawed_len = np.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
+        self.wire_point._offsets3d = ([x1], [y1], [z1])
+        self.wire_line.set_data([x1, x2], [y1, y2])
+        self.wire_line.set_3d_properties([z1, z2])
+        drawed_len = np.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
 
-            self.wire_axis = self.ax.quiver(x1, y1, z1,
-                            self.zero_wire_dir[0, 2], self.zero_wire_dir[1, 2], self.zero_wire_dir[2, 2],
-                            color="purple", label='', linewidth=1,
-                            arrow_length_ratio=0.5)
+        self.wire_axis = self.ax.quiver(x1, y1, z1,
+                        self.zero_wire_direction[0], self.zero_wire_direction[1], self.zero_wire_direction[2],
+                        color="purple", label='', linewidth=1,
+                        arrow_length_ratio=0.5)
     
         # Draw each axis
         axis_length = 0.1
@@ -181,9 +181,9 @@ class ShowRobot:
 
         joint_info = f"Joint values:\nJ1: {joint_values[0]/DEG:.3f}°\nJ2: {joint_values[1]/DEG:.3f}°\nJ3: {joint_values[2]/DEG:.3f}°\nJ4: {joint_values[3]/DEG:.3f}°\nJ5: {joint_values[4]/DEG:.3f}°\nJ6: {joint_values[5]/DEG:.3f}°"
         self.joint_text.set_text(joint_info)
-        if real_distance != 0:
-            dataset_text = f"Real distance: {real_distance*1000:.3f} mm\nDrawed distance: {drawed_len*1000:.3f} mm\nIndex: {index}"
-            self.dataset_info.set_text(dataset_text)
+        #if real_distance != 0:
+        dataset_text = f"Real distance: {real_distance*1000:.3f} mm\nDrawed distance: {drawed_len*1000:.3f} mm\nIndex: {index}"
+        self.dataset_info.set_text(dataset_text)
 
         # Use blitting for faster updates
         try:
@@ -247,8 +247,7 @@ def on_key_press(event, counter, max):
 def visualize_dataset(model: hayati_model.HayatiModel, dataset, model_type, wire=True):
     robot_display = ShowRobot()
     robot_display.zero_wire_pos = model.get_transition_matrix(model.zero_wire_angles, model_type)[0:3, 3]
-    R = model.get_transition_matrix(model.zero_wire_angles, model_type)[:3, :3]
-    robot_display.zero_wire_dir = -(R @ robot_display.zero_wire_dir) 
+    robot_display.zero_wire_direction = model.zero_wire_direction * 0.1
 
     num = mp.Value('i', 0)
     robot_display.fig.canvas.mpl_connect('key_press_event', 

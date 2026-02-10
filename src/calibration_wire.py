@@ -7,20 +7,12 @@ import json
 import time
 import hayati_model
 from random import uniform
-from dataset_generation_wire import FIELDNAMES_OPTIONS, ERRORS_LIST
-from csv_routines import read_dataset
+from dataset_generation_wire import make_calibration_dataset, FIELDNAMES_OPTIONS, ERRORS_LIST
+from csv_routines import read_dataset, write_dataset
 
 DEG = np.pi / 180
 
-def main(args):
-    with open(args.config, 'r') as config_file:
-        config = json.load(config_file)
-    model = hayati_model.HayatiModel(config)
-    #create_real_DH(model)
-
-    execute_calibration(model, "datasets/ARM95/wire/calibration_dataset.csv")
-
-def create_real_DH(model: hayati_model.HayatiModel, angle_delta=2*DEG, len_delta=2/1000, tool_offset = False):
+def create_real_DH(model: hayati_model.HayatiModel, angle_delta=1*DEG, len_delta=0.5/1000, tool_offset = False):
     for i in range(6):
         if(model.nominal_dh[i][-1] == 0):
             d_or_beta = len_delta
@@ -46,12 +38,12 @@ def execute_calibration(model: hayati_model.HayatiModel, calibration_dataset: st
         error = final_value - real_value
         start_error = nominal_value - real_value
 
-        print(f"Nominal value: {nominal_value:.6f}")
-        print(f"Start error: {start_error:.6f}; {start_error/real_value * 100:.2f}%")
-
+        print(f"Nominal value: {nominal_value:.6f}")      
         print(f"Found value: {final_value:.6f}")
         print(f"Real value: {real_value:.6f}")
-        print(f"Error: {error:.6f}; {error/real_value * 100:.4}%")
+
+        print(f"Start error: {start_error:.6f}; {start_error/real_value * 100:.2f}%")
+        print(f"End error: {error:.6f}; {error/real_value * 100:.4}%")
         print("------------------------------------")
 
         model.estimated_dh[param_num][param_letter_num] = final_value        
@@ -93,8 +85,35 @@ def calculate_estimated_distance(model: hayati_model.HayatiModel, angles: Union[
     distance = sqrt((x - zero_pos[0])**2 + (y - zero_pos[1])**2 + (z - zero_pos[2])**2)
     return distance
 
+def check_results(model: hayati_model.HayatiModel, results="results/ARM95/test_result.csv", random_dataset="datasets/ARM95/absolute/random_samples.csv"):
+    poses = read_dataset(random_dataset, FIELDNAMES_OPTIONS["random_poses"])
+    
+    nominal_data = np.array([model.get_transition_matrix(pose, "nominal")[0:3, 3] for pose in poses])
+    real_data = np.array([model.get_transition_matrix(pose, "real")[0:3, 3] for pose in poses])
+    estimated_data = np.array([model.get_transition_matrix(pose, "estimated")[0:3, 3] for pose in poses])
+
+    nominal_diff = (real_data - nominal_data) * 1000 # mm
+    estimated_diff = (real_data - estimated_data) * 1000 # mm
+    nominal_dist = np.linalg.norm(nominal_diff, axis=1).reshape(len(poses), 1)
+    estimated_dist = np.linalg.norm(estimated_diff, axis=1).reshape(len(poses), 1)
+    delta = nominal_dist - estimated_dist
+
+    printable_res = np.concatenate((poses/DEG, nominal_dist, estimated_dist, delta), axis=1)
+    write_dataset(printable_res, results, FIELDNAMES_OPTIONS["test_result"], tolerance=".3f")
+
+def main(args):
+    with open(args.config, 'r') as config_file:
+        config = json.load(config_file)
+    model = hayati_model.HayatiModel(config)
+    #create_real_DH(model, angle_delta=0.5*DEG, len_delta=0.5/1000)
+
+    make_calibration_dataset(model, "datasets/ARM95/wire/contribution_dataset.csv", abs_tolerance=0.08/100, resolution=0.05/1000)
+    execute_calibration(model, "datasets/ARM95/wire/calibration_dataset.csv")
+    check_results(model)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="ARM95.json")
+    parser.add_argument("-m", "--mode", help="Name of .json configuration file. Default: ARM95.json", default="ARM95.json")
     args = parser.parse_args()
     main(args)
