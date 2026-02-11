@@ -64,36 +64,36 @@ def calculate_optimal_position(model: hayati_model.HayatiModel, i_target: int, a
         return -(output[i_target]**2)
 
     cons = []
-    # if i_target > 0:
-    #     def past_limits(angles):
-    #         past_values = calculate_contribution(model, angles)[:i_target]
-    #         upper = prev_eps - past_values
-    #         lower = past_values + prev_eps
-    #         return np.concatenate([upper, lower])        
-    #     cons.append({'type': 'ineq', 'fun': past_limits})
+    if i_target > 0:
+        def past_limits(angles):
+            past_values = calculate_contribution(model, angles)[:i_target]
+            upper = prev_eps - past_values
+            lower = past_values + prev_eps
+            return np.concatenate([upper, lower])        
+        cons.append({'type': 'ineq', 'fun': past_limits})
 
-    # if i_target < len(ERRORS_LIST) - 1:
-    #     def future_limits(angles):
-    #         past_values = calculate_contribution(model, angles)[i_target + 1:]
-    #         upper = future_eps - past_values
-    #         lower = past_values + future_eps
-    #         return np.concatenate([upper, lower])
-    # cons.append({'type': 'ineq', 'fun': future_limits})
+    if i_target < len(ERRORS_LIST) - 1:
+        def future_limits(angles):
+            past_values = calculate_contribution(model, angles)[i_target + 1:]
+            upper = future_eps - past_values
+            lower = past_values + future_eps
+            return np.concatenate([upper, lower])
+    cons.append({'type': 'ineq', 'fun': future_limits})
 
-    # def z_direction_limit(angles):    # so z_new face forward
-    #     z_dir = model.get_transition_matrix(angles, "nominal")[0:3, 2]
-    #     dot = np.vdot(z_dir, -model.zero_wire_direction)
-    #     return dot #z_dir[0]    
-    # cons.append({'type': 'ineq', 'fun': z_direction_limit})
+    def z_direction_limit(angles):    # so z_new face forward
+        z_dir = model.get_transition_matrix(angles, "nominal")[0:3, 2]
+        dot = np.vdot(z_dir, -model.zero_wire_direction)
+        return dot #z_dir[0]    
+    cons.append({'type': 'ineq', 'fun': z_direction_limit})
     
-    # def wire_direction_limit(angles):    # so wire stretch forward
-    #     wire_dir = model.get_transition_matrix(angles, "nominal")[0:3, 3] - model.zero_offset_nominal 
-    #     res = np.vdot(wire_dir, model.zero_wire_direction)
-    #     return res
-    # cons.append({'type': 'ineq', 'fun': wire_direction_limit})
+    def wire_direction_limit(angles):    # so wire stretch forward
+        wire_dir = model.get_transition_matrix(angles, "nominal")[0:3, 3] - model.zero_offset_nominal 
+        res = np.vdot(wire_dir, model.zero_wire_direction)
+        return res
+    cons.append({'type': 'ineq', 'fun': wire_direction_limit})
 
     res = minimize(objective, angles_start, method='SLSQP', 
-        bounds=bounds, tol=1e-6, options={'ftol': 1e-6})
+        bounds=bounds, constraints=cons, tol=1e-6, options={'ftol': 1e-6})
     if res.success:
         return(res.x)
     else:
@@ -191,12 +191,12 @@ def main(args):
         print("generation_output.csv will be erased, continue? y/n")
         #ans = input()
         #if ans == 'y':
-        user_joint_mask = np.array([1, 1, 1, 1, 1, 1])
-        i_target = 5
+        user_joint_mask = np.array([0, 0, 0, 1, 1, 1])
+        i_target = 0
         max_tries = 100
-        prev_eps = 100
-        future_eps = 100
-        angle_diff = 20
+        prev_eps = 0.0005
+        future_eps = 0.0004
+        angle_diff = 5
         generate_samples(model, i_target, user_joint_mask, max_tries=max_tries, prev_eps=prev_eps, future_eps=future_eps, angle_diff=angle_diff) 
 
     elif mode == "check":
