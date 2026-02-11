@@ -3,13 +3,14 @@ import argparse
 import json
 import os
 import numpy as np
-from math import sqrt
+from math import sqrt, acos
 from random import uniform
 from math_routines import extract_zyx_euler
 import hayati_model
 from typing import Union
 from scipy.optimize import minimize
 from csv_routines import write_dataset, add_line_csv, read_dataset
+from multiprocessing import Pool, cpu_count
 
 np.set_printoptions(precision=3, suppress=True, formatter={'all': lambda x: f'{x:0.3f}'})
 
@@ -51,13 +52,13 @@ def calculate_wire_direction(model: hayati_model.HayatiModel, angles: Union[list
 
 def calculate_contribution(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray]):
     jac_DH = calculate_jac_DH_params(model, angles)
-    #jac_DH_0 = calculate_jac_DH_params(model, model.zero_wire_angles)
     wire_direction = calculate_wire_direction(model, angles)
     contribution = np.dot(wire_direction.T, jac_DH - model.jac_DH_0)
     return contribution.flatten()
 
-def calculate_optimal_position(model: hayati_model.HayatiModel, i_target: int, angles_start:Union[list, np.ndarray], bounds:Union[list, np.ndarray],
-                                            prev_eps: float, future_eps: float):
+def calculate_optimal_position(model: hayati_model.HayatiModel, i_target: int, angles_start:Union[list, np.ndarray],
+                                bounds:Union[list, np.ndarray], wire_limits_mm:Union[list, np.ndarray], angle_limits:Union[list, np.ndarray],
+                                prev_eps: float, future_eps: float):
     
     def objective(angles):
         output = calculate_contribution(model, angles)
@@ -80,17 +81,32 @@ def calculate_optimal_position(model: hayati_model.HayatiModel, i_target: int, a
             return np.concatenate([upper, lower])
     cons.append({'type': 'ineq', 'fun': future_limits})
 
-    def z_direction_limit(angles):    # so z_new face forward
-        z_dir = model.get_transition_matrix(angles, "nominal")[0:3, 2]
-        dot = np.vdot(z_dir, -model.zero_wire_direction)
-        return dot #z_dir[0]    
-    cons.append({'type': 'ineq', 'fun': z_direction_limit})
+    # def z_direction_limit(angles):    # so z_new face forward
+    #     z_dir = model.get_transition_matrix(angles, "nominal")[0:3, 2]
+    #     scalar_z = np.vdot(z_dir, -model.zero_wire_direction)
+    #     alpha_z = acos(scalar_z) / DEG
+    #     angle_cons_z = np.array([alpha_z - angle_limits[0], angle_limits[1] - alpha_z]) # so angle would fit
+
+    #     wire = (model.get_transition_matrix(angles, "nominal")[0:3, 3] - model.zero_offset_nominal) * 1000  #mm
+    #     scalar_wire = np.vdot(wire / np.linalg.norm(wire), -model.zero_wire_direction)
+    #     alpha_wire = acos(scalar_wire) / DEG
+    #     angle_cons_wire = np.array([alpha_wire, angle_limits[1] - alpha_wire]) # so angle would fit 
+
+    #     return np.concatenate(([scalar_z], [scalar_wire], angle_cons_z, angle_cons_wire)) #z_dir[0]    
+    # cons.append({'type': 'ineq', 'fun': z_direction_limit})
+
+    def wire_limits(angles):
+        wire = (model.get_transition_matrix(angles, "nominal")[0:3, 3] - model.zero_offset_nominal) * 1000  #mm
+        wire_len = np.linalg.norm(wire) 
+        len_cons = np.array([wire_len - wire_limits_mm[0], wire_limits_mm[1] - wire_len]) # so wire len would fit
+
+        scalar = np.vdot(wire / wire_len, model.zero_wire_direction)  # > 0 so wire stretch forward        
+        alpha = acos(scalar) / DEG
+        angle_cons = np.array([alpha - angle_limits[0], angle_limits[1] - alpha]) # so angle would fit
+
+        return np.concatenate(([scalar], angle_cons, len_cons))
     
-    def wire_direction_limit(angles):    # so wire stretch forward
-        wire_dir = model.get_transition_matrix(angles, "nominal")[0:3, 3] - model.zero_offset_nominal 
-        res = np.vdot(wire_dir, model.zero_wire_direction)
-        return res
-    cons.append({'type': 'ineq', 'fun': wire_direction_limit})
+    cons.append({'type': 'ineq', 'fun': wire_limits})
 
     res = minimize(objective, angles_start, method='SLSQP', 
         bounds=bounds, constraints=cons, tol=1e-6, options={'ftol': 1e-6})
@@ -98,43 +114,84 @@ def calculate_optimal_position(model: hayati_model.HayatiModel, i_target: int, a
         return(res.x)
     else:
         return([None for _ in range(6)])
+
+def _generate_batch(tries_count, model, i_target, user_joint_mask, bounds, wire_limits_mm, angle_limits, prev_eps, future_eps, angle_diff):
+    np.random.seed()
     
-def generate_single_layer(model: hayati_model.HayatiModel, i_target: int, user_joint_mask, tries_num, prev_eps, future_eps, angle_diff):
-    samples = []
-    samples_contributions = []
+    local_samples = []
+    local_contributions = []
+
+    active_joint_indices = np.where(user_joint_mask)[0]
+    num_active = len(active_joint_indices)
+
+    if num_active > 0:
+        active_bounds = np.array(model.bounds)[active_joint_indices]
+        
+        all_random_angles = np.random.uniform(
+            low=active_bounds[:, 0], 
+            high=active_bounds[:, 1], 
+            size=(tries_count, num_active)
+        )
+    
+    angles = model.zero_wire_angles.copy()
+
+    for i in range(tries_count):
+        if num_active > 0:
+            angles[active_joint_indices] = all_random_angles[i]
+        
+        new_sample = calculate_optimal_position(model, i_target, angles, bounds, wire_limits_mm, angle_limits, prev_eps, future_eps)
+        
+        if new_sample[0] is not None:
+            single_contribution = calculate_contribution(model, new_sample)
+            
+            similar_index = get_similar_index(local_samples, new_sample, angle_diff * DEG)
+            
+            if similar_index is None:
+                local_samples.append(new_sample.copy())
+                local_contributions.append(single_contribution.copy())
+            elif abs(single_contribution[i_target]) > abs(local_contributions[similar_index][i_target]):
+                local_samples[similar_index] = new_sample.copy()
+                local_contributions[similar_index] = single_contribution.copy()
+
+    return local_samples, local_contributions
+
+def generate_single_layer(model, i_target, user_joint_mask, tries_num, wire_limits_mm, angle_limits, prev_eps, future_eps, angle_diff):
+    num_cores = cpu_count()
+    chunk_size = tries_num // num_cores
+
     angles = model.zero_wire_angles.copy()
     bounds = np.array([[angles[i], angles[i]] for i in range(6)])
-    for _ in range(tries_num):
-        for i, joint in enumerate(user_joint_mask):
-            if(joint):
-                angles[i] = uniform(model.bounds[i][0], model.bounds[i][1])
-                bounds[i] = model.bounds[i]
+    bounds = bounds * abs(user_joint_mask - 1) + model.bounds * user_joint_mask
 
-        new_sample = calculate_optimal_position(model, i_target, angles, bounds, prev_eps, future_eps)
-        if(new_sample[0] != None):      # optimiztion success
-            # m = model.get_transition_matrix(new_sample, "nominal")
-            # z_dir = m[0:3, 2] 
-            # res1 = np.vdot(z_dir, -model.zero_wire_direction)
-            # if (res1 < 0):          # if z_new faced backwards
-            #     continue        
-            # wire_dir = m[0:3, 3] - model.zero_offset_nominal  
-            # res =   np.vdot(wire_dir, model.zero_wire_direction)
-            # if(res <= 0):    #if wire is stretched backwards
-            #     continue
+    tasks = []
+    for i in range(num_cores):
+        current_tries = chunk_size
+        if current_tries > 0:
+            tasks.append((
+                current_tries, model, i_target, user_joint_mask, bounds, 
+                wire_limits_mm, angle_limits,
+                prev_eps, future_eps, angle_diff
+            ))        
 
-            single_contribution = calculate_contribution(model, new_sample)
-            # if abs(single_contribution[i_target]) < future_eps:   # low contribution
-            #     continue
+    with Pool(processes=num_cores) as pool:
+        results = pool.starmap(_generate_batch, tasks)
 
-            similar_index = get_similar_index(samples, new_sample, angle_diff*DEG)
-            if similar_index == None:
-                samples.append(new_sample.copy())
-                samples_contributions.append(single_contribution.copy())
-            elif abs(single_contribution[i_target]) > abs(samples_contributions[similar_index][i_target]):
-                samples[similar_index] = new_sample.copy()
-                samples_contributions[similar_index] = single_contribution.copy()
+    final_samples = []
+    final_contributions = []
 
-    return {"samples": samples, "contributions": samples_contributions}
+    for batch_samples, batch_contributions in results:
+        for new_sample, single_contribution in zip(batch_samples, batch_contributions):
+            
+            similar_index = get_similar_index(final_samples, new_sample, angle_diff * DEG)
+            
+            if similar_index is None:
+                final_samples.append(new_sample)
+                final_contributions.append(single_contribution)
+            elif abs(single_contribution[i_target]) > abs(final_contributions[similar_index][i_target]):
+                final_samples[similar_index] = new_sample
+                final_contributions[similar_index] = single_contribution
+
+    return {"samples": final_samples, "contributions": final_contributions}
 
 def get_similar_index(samples, new_sample: np.ndarray, delta):     
     if len(samples) == 0:
@@ -143,15 +200,16 @@ def get_similar_index(samples, new_sample: np.ndarray, delta):
     samples_array = np.array(samples)
     diffs = np.abs(samples_array - new_sample)
     
-    # This creates a boolean array where True means the row is similar
     is_similar_mask = np.all(diffs <= delta, axis=1)
     if not np.any(is_similar_mask):
         return None
     
     return np.argmax(is_similar_mask)
 
-def generate_samples(model: hayati_model.HayatiModel, i_target: int, user_joint_mask, max_tries=100, prev_eps=0.0005, future_eps=0.0004, angle_diff=5):
-    res = generate_single_layer(model, i_target, user_joint_mask, max_tries, prev_eps, future_eps, angle_diff)
+def generate_samples(model: hayati_model.HayatiModel, i_target: int, user_joint_mask, 
+                     max_tries=100, wire_limits_mm=[5, 10000], angle_limits=[5, 85],
+                     prev_eps=0.0005, future_eps=0.0004, angle_diff=5):
+    res = generate_single_layer(model, i_target, user_joint_mask, max_tries, wire_limits_mm, angle_limits, prev_eps, future_eps, angle_diff)
     printable_res = [np.concatenate((s / DEG, [i_target], c.flatten())).tolist() for s, c in zip(res["samples"], res["contributions"])]
     printable_res.sort(key = lambda x: -abs(x[7 + i_target]))
     write_dataset(printable_res, "datasets/ARM95/wire/generation_output.csv", FIELDNAMES_OPTIONS["wire_contributions"], tolerance = ".3f")
@@ -161,7 +219,8 @@ def measure_real_distance(model: hayati_model.HayatiModel, angles: Union[list, n
     [x, y, z] = model.get_transition_matrix(angles, "real")[0:3, 3]
     distance = sqrt((x - model.zero_offset_real[0])**2 + (y - model.zero_offset_real[1])**2 + (z - model.zero_offset_real[2])**2)
     distance *= 1 + uniform(-1, 1) * abs_tolerance          # fit tolerance
-    distance = round(distance / resolution) * resolution    # fit resolution
+    if resolution != 0:
+        distance = round(distance / resolution) * resolution    # fit resolution
     return distance
 
 def measure_all_distances(model: hayati_model.HayatiModel, dataset_contributions: str, abs_tolerance: float, resolution: float):
@@ -191,13 +250,19 @@ def main(args):
         print("generation_output.csv will be erased, continue? y/n")
         #ans = input()
         #if ans == 'y':
-        user_joint_mask = np.array([0, 0, 0, 1, 1, 1])
-        i_target = 0
-        max_tries = 100
-        prev_eps = 0.0005
-        future_eps = 0.0004
-        angle_diff = 5
-        generate_samples(model, i_target, user_joint_mask, max_tries=max_tries, prev_eps=prev_eps, future_eps=future_eps, angle_diff=angle_diff) 
+        user_joint_mask = np.array([1, 1, 1, 1, 1, 1]).reshape(6, 1)
+        i_target = 3
+        max_tries = 1000
+
+        wire_limits_mm=[5, 10000]
+        angle_limits=[5, 85]
+
+        prev_eps = 0.05
+        future_eps = 0.0004 
+        angle_diff = 15        
+        generate_samples(model, i_target, user_joint_mask, max_tries=max_tries, 
+                         wire_limits_mm=wire_limits_mm, angle_limits=angle_limits, 
+                         prev_eps=prev_eps, future_eps=future_eps, angle_diff=angle_diff) 
 
     elif mode == "check":
         angles = np.array([0 * DEG, 36.1 * DEG, 96.8 * DEG, -90 * DEG, -41.976 * DEG, -81.238 * DEG])
@@ -212,7 +277,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="ARM95.json")
-    parser.add_argument("-g", "--generate", help="Generate dataset for selected method. Default: true", type=bool, default=True)
+    parser.add_argument("-g", "--generate", help="Generate dataset for selected method. Default: False", default="False")
     args = parser.parse_args()
     main(args)
         

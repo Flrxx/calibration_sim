@@ -2,18 +2,37 @@ import csv
 import argparse
 import json
 import numpy as np
-from random import random
+from random import uniform
 from math_routines import extract_zyx_euler
 import hayati_model
 from typing import Union
 from csv_routines import write_dataset, add_line_csv, read_dataset
-
+import copy
 
 FIELDNAMES_OPTIONS = {
     "random" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'px_r', 'py_r', 'pz_r', 'rx_r', 'ry_r', 'rz_r'],
     "circles": ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'px_r', 'py_r', 'pz_r', 'joint'],
     "random_poses" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6']
 }
+
+DEG = np.pi/180
+
+def generate_real_DH(model:hayati_model.HayatiModel, angle_delta=0.5*DEG, len_delta=0.5/1000):
+    new_dh = copy.deepcopy(model.nominal_dh)
+    for i in range(6):
+        if(model.nominal_dh[i][-1] == 0):
+            d_or_beta = len_delta
+        else:
+            d_or_beta = angle_delta
+        new_dh[i][0] += len_delta * uniform(-1, 1) 
+        new_dh[i][1] += angle_delta * uniform(-1, 1)
+        new_dh[i][2] += d_or_beta * uniform(-1, 1) 
+        new_dh[i][3] += angle_delta * uniform(-1, 1)
+
+        print("[")
+        print(f"    {new_dh[i][0]:0.6f}, {new_dh[i][1]:0.6f}, {new_dh[i][2]:0.6f}, {new_dh[i][3]:0.6f}, {model.nominal_dh[i][-1]}")
+        print("],")
+    return new_dh
 
 def generate_dataset(model: hayati_model.HayatiModel):
     print("Generating main dataset...")

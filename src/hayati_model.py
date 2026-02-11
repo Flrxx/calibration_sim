@@ -56,7 +56,13 @@ class HayatiModel:
         self.jac_DH_0 = 0
         self.zero_offset_nominal = self.get_transition_matrix(self.zero_wire_angles, "nominal")[0:3, 3]
         self.zero_offset_real = self.get_transition_matrix(self.zero_wire_angles, "real")[0:3, 3]
-        self.zero_wire_direction = -(self.get_transition_matrix(self.zero_wire_angles, "nominal")[:3, :3] @ np.eye(3))[:, 2]
+        
+        zero_wire_vec = -(self.get_transition_matrix(self.zero_wire_angles, "nominal")[:3, :3] @ np.eye(3))[:, 2]
+        norm = np.linalg.norm(zero_wire_vec)
+        if norm > 0:
+            self.zero_wire_direction = zero_wire_vec / norm
+        else:
+            self.zero_wire_direction = [None, None, None]
 
         self.measurable_params_mask = np.array([0, 1, 2, 3, 4, 5], dtype='int') 
 
