@@ -14,7 +14,7 @@ from multiprocessing import Pool, cpu_count
 
 np.set_printoptions(precision=3, suppress=True, formatter={'all': lambda x: f'{x:0.3f}'})
 
-ERRORS_LIST = ['theta_6', 'd_6', 'theta_5', 'theta_4', 'a_3', 'd_4', 'a_2', 'theta_3', 'theta_2', 'a_1']
+ERRORS_LIST = ['theta_6', 'd_6', 'theta_5', 'theta_4', 'a_3', 'd_4', 'a_2', 'theta_3', 'theta_2', 'a_1' ,'d_3']
 
 FIELDNAMES_OPTIONS = {
     "wire_contributions" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'index', *ERRORS_LIST],
@@ -79,21 +79,21 @@ def calculate_optimal_position(model: hayati_model.HayatiModel, i_target: int, a
             upper = future_eps - past_values
             lower = past_values + future_eps
             return np.concatenate([upper, lower])
-    cons.append({'type': 'ineq', 'fun': future_limits})
+        cons.append({'type': 'ineq', 'fun': future_limits})
 
-    # def z_direction_limit(angles):    # so z_new face forward
-    #     z_dir = model.get_transition_matrix(angles, "nominal")[0:3, 2]
-    #     scalar_z = np.vdot(z_dir, -model.zero_wire_direction)
-    #     alpha_z = acos(scalar_z) / DEG
-    #     angle_cons_z = np.array([alpha_z - angle_limits[0], angle_limits[1] - alpha_z]) # so angle would fit
+    def z_direction_limit(angles):    # so z_new face forward
+        z_dir = model.get_transition_matrix(angles, "nominal")[0:3, 2]
+        scalar_z = np.vdot(z_dir, -model.zero_wire_direction)
+        alpha_z = acos(scalar_z) / DEG
+        angle_cons_z = np.array([alpha_z, angle_limits[1] - alpha_z]) # so angle would fit
 
-    #     wire = (model.get_transition_matrix(angles, "nominal")[0:3, 3] - model.zero_offset_nominal) * 1000  #mm
-    #     scalar_wire = np.vdot(wire / np.linalg.norm(wire), -model.zero_wire_direction)
-    #     alpha_wire = acos(scalar_wire) / DEG
-    #     angle_cons_wire = np.array([alpha_wire, angle_limits[1] - alpha_wire]) # so angle would fit 
+        wire = (model.get_transition_matrix(angles, "nominal")[0:3, 3] - model.zero_offset_nominal) * 1000  #mm
+        scalar_wire = np.vdot(-(wire / np.linalg.norm(wire)), z_dir)
+        alpha_wire = acos(scalar_wire) / DEG
+        angle_cons_wire = np.array([alpha_wire, angle_limits[1] - alpha_wire]) # so angle would fit 
 
-    #     return np.concatenate(([scalar_z], [scalar_wire], angle_cons_z, angle_cons_wire)) #z_dir[0]    
-    # cons.append({'type': 'ineq', 'fun': z_direction_limit})
+        return np.concatenate(([scalar_z], [scalar_wire], angle_cons_z, angle_cons_wire)) #z_dir[0]    
+    cons.append({'type': 'ineq', 'fun': z_direction_limit})
 
     def wire_limits(angles):
         wire = (model.get_transition_matrix(angles, "nominal")[0:3, 3] - model.zero_offset_nominal) * 1000  #mm
@@ -102,7 +102,7 @@ def calculate_optimal_position(model: hayati_model.HayatiModel, i_target: int, a
 
         scalar = np.vdot(wire / wire_len, model.zero_wire_direction)  # > 0 so wire stretch forward        
         alpha = acos(scalar) / DEG
-        angle_cons = np.array([alpha - angle_limits[0], angle_limits[1] - alpha]) # so angle would fit
+        angle_cons = np.array([alpha, angle_limits[1] - alpha]) # so angle would fit
 
         return np.concatenate(([scalar], angle_cons, len_cons))
     
@@ -155,7 +155,7 @@ def _generate_batch(tries_count, model, i_target, user_joint_mask, bounds, wire_
 
     return local_samples, local_contributions
 
-def generate_single_layer(model, i_target, user_joint_mask, tries_num, wire_limits_mm, angle_limits, prev_eps, future_eps, angle_diff):
+def generate_single_layer(model: hayati_model.HayatiModel, i_target, user_joint_mask, tries_num, wire_limits_mm, angle_limits, prev_eps, future_eps, angle_diff):
     num_cores = cpu_count()
     chunk_size = tries_num // num_cores
 
@@ -175,9 +175,10 @@ def generate_single_layer(model, i_target, user_joint_mask, tries_num, wire_limi
 
     with Pool(processes=num_cores) as pool:
         results = pool.starmap(_generate_batch, tasks)
-
-    final_samples = []
-    final_contributions = []
+    
+    previous_res = read_dataset(model.generation_output, FIELDNAMES_OPTIONS["wire_contributions"])
+    final_samples = (previous_res[:,0:6] * DEG)
+    final_contributions = previous_res[:,7:]
 
     for batch_samples, batch_contributions in results:
         for new_sample, single_contribution in zip(batch_samples, batch_contributions):
@@ -185,8 +186,8 @@ def generate_single_layer(model, i_target, user_joint_mask, tries_num, wire_limi
             similar_index = get_similar_index(final_samples, new_sample, angle_diff * DEG)
             
             if similar_index is None:
-                final_samples.append(new_sample)
-                final_contributions.append(single_contribution)
+                final_samples = np.append(final_samples, new_sample.reshape(1, 6), axis = 0)
+                final_contributions = np.append(final_contributions, single_contribution.reshape(1, len(ERRORS_LIST)), axis = 0)
             elif abs(single_contribution[i_target]) > abs(final_contributions[similar_index][i_target]):
                 final_samples[similar_index] = new_sample
                 final_contributions[similar_index] = single_contribution
@@ -197,8 +198,8 @@ def get_similar_index(samples, new_sample: np.ndarray, delta):
     if len(samples) == 0:
         return None
     
-    samples_array = np.array(samples)
-    diffs = np.abs(samples_array - new_sample)
+    #samples_array = np.array(samples)
+    diffs = np.abs(samples - new_sample)
     
     is_similar_mask = np.all(diffs <= delta, axis=1)
     if not np.any(is_similar_mask):
@@ -212,29 +213,30 @@ def generate_samples(model: hayati_model.HayatiModel, i_target: int, user_joint_
     res = generate_single_layer(model, i_target, user_joint_mask, max_tries, wire_limits_mm, angle_limits, prev_eps, future_eps, angle_diff)
     printable_res = [np.concatenate((s / DEG, [i_target], c.flatten())).tolist() for s, c in zip(res["samples"], res["contributions"])]
     printable_res.sort(key = lambda x: -abs(x[7 + i_target]))
-    write_dataset(printable_res, "datasets/ARM95/wire/generation_output.csv", FIELDNAMES_OPTIONS["wire_contributions"], tolerance = ".3f")
+    write_dataset(printable_res, model.generation_output, FIELDNAMES_OPTIONS["wire_contributions"], tolerance = ".3f")
     print(f"Found {len(printable_res)} poses")
 
-def measure_real_distance(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray], abs_tolerance, resolution):
+def measure_real_distance(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray]):
     [x, y, z] = model.get_transition_matrix(angles, "real")[0:3, 3]
     distance = sqrt((x - model.zero_offset_real[0])**2 + (y - model.zero_offset_real[1])**2 + (z - model.zero_offset_real[2])**2)
-    distance *= 1 + uniform(-1, 1) * abs_tolerance          # fit tolerance
-    if resolution != 0:
-        distance = round(distance / resolution) * resolution    # fit resolution
+    distance *= 1 + uniform(-1, 1) * model.encoder_abs_tolerance                            # fit tolerance
+    if model.encoder_resolution != 0:
+        distance = round(distance / model.encoder_resolution) * model.encoder_resolution    # fit resolution
     return distance
 
-def measure_all_distances(model: hayati_model.HayatiModel, dataset_contributions: str, abs_tolerance: float, resolution: float):
-    dataset = read_dataset(dataset_contributions, FIELDNAMES_OPTIONS['wire_contributions'])[:, 0:8]
+def measure_all_distances(model: hayati_model.HayatiModel, dataset=[]):
+    #if len(dataset) == 0:
+    dataset = read_dataset(model.contribution_dataset, FIELDNAMES_OPTIONS['wire_contributions'])[:, 0:8]
     dataset[:, 0:6] *= DEG
     for sample in dataset:
-        sample[7] = measure_real_distance(model, sample[0:6], abs_tolerance, resolution)
+        sample[7] = measure_real_distance(model, sample[0:6])
     return dataset
 
-def make_calibration_dataset(model: hayati_model.HayatiModel, dataset_contributions: str, calibration_dataset="datasets/ARM95/wire/calibration_dataset.csv", abs_tolerance=0.08/100, resolution=0.05/1000):
+def make_calibration_dataset(model: hayati_model.HayatiModel):
     model.jac_DH_0 = calculate_jac_DH_params(model, model.zero_wire_angles)
-    dataset = measure_all_distances(model, dataset_contributions, abs_tolerance, resolution)
+    dataset = measure_all_distances(model)
     dataset[:, 0:6] /= DEG
-    write_dataset(dataset, calibration_dataset, FIELDNAMES_OPTIONS["wire_samples"], tolerance=".6f") 
+    write_dataset(dataset, model.calibration_dataset, FIELDNAMES_OPTIONS["wire_samples"], tolerance=".6f") 
 
 def main(args):
     with open(args.config, 'r') as config_file:
@@ -247,19 +249,19 @@ def main(args):
     #mode = "distances"
 
     if mode == "find":
-        print("generation_output.csv will be erased, continue? y/n")
+        #print("generation_output.csv will be erased, continue? y/n")
         #ans = input()
         #if ans == 'y':
         user_joint_mask = np.array([1, 1, 1, 1, 1, 1]).reshape(6, 1)
-        i_target = 3
+        i_target = 10
         max_tries = 1000
 
-        wire_limits_mm=[5, 10000]
+        wire_limits_mm=[15, 10000]
         angle_limits=[5, 85]
 
-        prev_eps = 0.05
+        prev_eps = 10
         future_eps = 0.0004 
-        angle_diff = 15        
+        angle_diff = 20        
         generate_samples(model, i_target, user_joint_mask, max_tries=max_tries, 
                          wire_limits_mm=wire_limits_mm, angle_limits=angle_limits, 
                          prev_eps=prev_eps, future_eps=future_eps, angle_diff=angle_diff) 
@@ -267,10 +269,10 @@ def main(args):
     elif mode == "check":
         angles = np.array([0 * DEG, 36.1 * DEG, 96.8 * DEG, -90 * DEG, -41.976 * DEG, -81.238 * DEG])
         contribution = calculate_contribution(model, angles)
-        add_line_csv(np.concatenate((angles / DEG, [0], contribution.flatten())).tolist(),"datasets/ARM95/wire/contribution_dataset.csv", FIELDNAMES_OPTIONS['wire_contributions'], ".3f")
+        add_line_csv(np.concatenate((angles / DEG, [0], contribution.flatten())).tolist(), model.contribution_dataset, FIELDNAMES_OPTIONS['wire_contributions'], ".3f")
         
     elif mode == "distances":
-        make_calibration_dataset(model, dataset_contributions="datasets/ARM95/wire/contribution_dataset.csv")
+        make_calibration_dataset(model, model.contribution_dataset, model.calibration_dataset, model.encoder_abs_tolerance, model.encoder_resolution)
 
     print("Done")
 

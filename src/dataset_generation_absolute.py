@@ -2,7 +2,7 @@ import csv
 import argparse
 import json
 import numpy as np
-from random import uniform
+from random import uniform, random
 from math_routines import extract_zyx_euler
 import hayati_model
 from typing import Union
@@ -17,7 +17,7 @@ FIELDNAMES_OPTIONS = {
 
 DEG = np.pi/180
 
-def generate_real_DH(model:hayati_model.HayatiModel, angle_delta=0.5*DEG, len_delta=0.5/1000):
+def generate_real_dh(model:hayati_model.HayatiModel, angle_delta, len_delta):
     new_dh = copy.deepcopy(model.nominal_dh)
     for i in range(6):
         if(model.nominal_dh[i][-1] == 0):
@@ -29,14 +29,14 @@ def generate_real_DH(model:hayati_model.HayatiModel, angle_delta=0.5*DEG, len_de
         new_dh[i][2] += d_or_beta * uniform(-1, 1) 
         new_dh[i][3] += angle_delta * uniform(-1, 1)
 
-        print("[")
-        print(f"    {new_dh[i][0]:0.6f}, {new_dh[i][1]:0.6f}, {new_dh[i][2]:0.6f}, {new_dh[i][3]:0.6f}, {model.nominal_dh[i][-1]}")
-        print("],")
+        # print("[")
+        # print(f"    {new_dh[i][0]:0.6f}, {new_dh[i][1]:0.6f}, {new_dh[i][2]:0.6f}, {new_dh[i][3]:0.6f}, {model.nominal_dh[i][-1]}")
+        # print("],")
     return new_dh
 
 def generate_dataset(model: hayati_model.HayatiModel):
     print("Generating main dataset...")
-    write_dataset(generate_random_dataset(model), model.dataset_file, FIELDNAMES_OPTIONS["random_poses"])
+    write_dataset(generate_random_dataset(model), model.test_dataset_file, FIELDNAMES_OPTIONS["random_poses"])
     # print("Generating circles datasets...")
     # write_dataset(generate_base_circles_dataset(model), model.base_circles_dataset_file, FIELDNAMES_OPTIONS["circles"])
     # write_dataset(generate_tool_circles_dataset(model), model.tool_circles_dataset_file, FIELDNAMES_OPTIONS["circles"])
@@ -62,8 +62,8 @@ def generate_dataset(model: hayati_model.HayatiModel):
 #     return dataset
 
 def generate_random_dataset(model, disable_limits=False):
-    dataset = np.zeros((model.general_samples_number, len(FIELDNAMES_OPTIONS["random_poses"])))
-    for i in range(model.general_samples_number):
+    dataset = np.zeros((model.test_samples_number, len(FIELDNAMES_OPTIONS["random_poses"])))
+    for i in range(model.test_samples_number):
         dataset[i] = make_random_sample(model, disable_limits)
     return dataset
 

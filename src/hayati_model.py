@@ -12,13 +12,14 @@ DEG = np.pi / 180
 
 class HayatiModel:
     def __init__(self, config):
-        self.optimization_method = config['optimization_method']
-        self.dataset_file = config['dataset_file']
-        self.base_circles_dataset_file = config['base_circles_dataset_file']
-        self.tool_circles_dataset_file = config['tool_circles_dataset_file']
+        self.generation_output = config['generation_output']
+        self.contribution_dataset = config['contribution_dataset']
+        self.calibration_dataset = config['calibration_dataset']
+
+        self.test_dataset_file = config['test_dataset_file']
         self.results_file = config["results_file"]
 
-         # DH params: [a, alpha, d/beta, theta_offset, parallel_axis]. Angle beta is used instead of d if axis is nearly parallel to the previous
+        # DH params: [a, alpha, d/beta, theta_offset, parallel_axis]. Angle beta is used instead of d if axis is nearly parallel to the previous
         self.nominal_dh = config['nominal_dh']
         self.nominal_base_params = config['nominal_base_params']
         self.nominal_tool_params = config['nominal_tool_params']
@@ -48,10 +49,8 @@ class HayatiModel:
         self.cartesian_limits = config["cartesian_limits"]
         self.max_z_angle = config["max_z_angle"]
         
-        self.general_samples_number = config["general_samples_number"]
-        self.circle_samples_number = config["circle_samples_number"]
+        self.test_samples_number = config["test_samples_number"]
 
-        #self.zero_tracker_position = config["zero_tracker_position"]
         self.zero_wire_angles = np.array(config["zero_wire_angles"]) * DEG
         self.jac_DH_0 = 0
         self.zero_offset_nominal = self.get_transition_matrix(self.zero_wire_angles, "nominal")[0:3, 3]
@@ -64,15 +63,11 @@ class HayatiModel:
         else:
             self.zero_wire_direction = [None, None, None]
 
-        self.measurable_params_mask = np.array([0, 1, 2, 3, 4, 5], dtype='int') 
+        self.encoder_abs_tolerance = config["encoder_abs_tolerance"]
+        self.encoder_resolution = config["encoder_resolution"]
 
-        self.identifiability_mask = np.ones(36, dtype='int')
-        self.koef = 0.001
-        self.lm_koef = 0.01
-        self.norm = 10
-        self.precision = config["precision"]
-        self.prev_norm = 0
-        self.num_point = 0
+        self.distance_delta = config["distance_delta"]
+        self.angle_delta = config["angle_delta_deg"] *DEG
     
     def get_transforms(self, angles: Union[np.ndarray, list], params: list) -> list:
         tfs = []
@@ -122,10 +117,40 @@ class HayatiModel:
         elif letter == 'theta':
             i = 3  
         return (num, i)     # 2, alpha
+    
+
+    # def param_from_letters(self, parametr: str, model_type: str):
+    #     letter, param_num = parametr.split("_")  
+    #     param_num = int(param_num) - 1
+    #     if letter == 'a':
+    #         param_letter_num = 0
+    #     elif letter == 'alpha':
+    #         param_letter_num = 1
+    #     elif letter == 'd' or letter == 'beta':
+    #         param_letter_num = 2
+    #     elif letter == 'theta':
+    #         param_letter_num = 3  
+
+    #     if model_type == 'estimated':
+    #         res = self.estimated_dh[param_num][param_letter_num] # 2, alpha
+    #     elif model_type == 'nominal':
+    #         res = self.nominal_dh[param_num][param_letter_num]
+    #     elif model_type == 'real':
+    #         res = self.real_dh[param_num][param_letter_num]
+    #     else:
+    #         res = None
+    #     return res
 
     def change_nominal_dh(self, parametr: str, eps: float):
         (num, i) = self.params_from_letters(parametr)
         self.nominal_dh[num][i] += eps
+
+    def reset_estimated_dh(self):
+        self.estimated_dh = copy.deepcopy(self.nominal_dh)
+    
+    def change_real_dh(self, new_dh: list):
+        self.real_dh = new_dh.copy()
+        self.zero_offset_real = self.get_transition_matrix(self.zero_wire_angles, "real")[0:3, 3]
     
     def get_all_transition_matrixes(self, angles: Union[np.ndarray, list], type: str) -> np.ndarray:
         if type == 'estimated':
