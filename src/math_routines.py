@@ -2,6 +2,7 @@ import numpy as np
 from math import cos, sin, pi, sqrt, atan2, asin, log10, acos, copysign
 from typing import Union
 from scipy.spatial.transform import Rotation
+DEG = np.pi / 180
 
 def x_rot (angle: Union[int, float]) -> np.ndarray:
     mat = np.array([[1, 0, 0, 0],

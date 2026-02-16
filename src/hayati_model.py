@@ -6,9 +6,7 @@ from math_routines import x_rot, y_rot, z_rot, arbitrary_axis_rot, trans
 from robotic_transformations import dh_trans, hayati_trans
 import multiprocessing as mp
 import copy
-
-BIG_NUMBER = 10e300
-DEG = np.pi / 180
+from math_routines import DEG
 
 class HayatiModel:
     def __init__(self, config):
@@ -52,7 +50,7 @@ class HayatiModel:
         self.test_samples_number = config["test_samples_number"]
 
         self.zero_wire_angles = np.array(config["zero_wire_angles"]) * DEG
-        self.jac_DH_0 = 0
+        self.jac_DH_0 = None
         self.zero_offset_nominal = self.get_transition_matrix(self.zero_wire_angles, "nominal")[0:3, 3]
         self.zero_offset_real = self.get_transition_matrix(self.zero_wire_angles, "real")[0:3, 3]
         
@@ -63,11 +61,20 @@ class HayatiModel:
         else:
             self.zero_wire_direction = [None, None, None]
 
-        self.encoder_abs_tolerance = config["encoder_abs_tolerance"]
-        self.encoder_resolution = config["encoder_resolution"]
+        self.encoder_abs_tolerance = config["encoder_abs_tolerance_percent"] / 100
+        self.encoder_resolution = config["encoder_resolution_mm"] / 1000
+        self.error_list = config["error_list"]
+        self.fieldnames_options = {
+            "wire_contributions" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'index', *self.error_list],
+            "wire_samples": ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'index', 'd'],
+            "random_poses" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6'],
+            "test_result": ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'delta']
+        }
+        self.wire_limits = [config["wire_limits_l_mm"] / 1000, config["wire_limits_l_mm"] / 1000]
+        self.angle_limit = config["angle_limit_deg"] * DEG
 
-        self.distance_delta = config["distance_delta"]
-        self.angle_delta = config["angle_delta_deg"] *DEG
+        self.distance_delta = config["distance_delta_mm"] / 1000
+        self.angle_delta = config["angle_delta_deg"] * DEG
     
     def get_transforms(self, angles: Union[np.ndarray, list], params: list) -> list:
         tfs = []
@@ -141,7 +148,7 @@ class HayatiModel:
     #         res = None
     #     return res
 
-    def change_nominal_dh(self, parametr: str, eps: float):
+    def vary_nominal_dh(self, parametr: str, eps: float):
         (num, i) = self.params_from_letters(parametr)
         self.nominal_dh[num][i] += eps
 

@@ -8,25 +8,24 @@ import time
 import hayati_model
 from random import uniform
 from dataset_generation_absolute import generate_real_dh
-from dataset_generation_wire import make_calibration_dataset, measure_all_distances, FIELDNAMES_OPTIONS, ERRORS_LIST
+from dataset_generation_wire import make_calibration_dataset, measure_all_distances
 from csv_routines import read_dataset, write_dataset
 from multiprocessing import Pool, cpu_count
 import copy
-
-DEG = np.pi / 180
+from math_routines import DEG
 
 def execute_calibration(model: hayati_model.HayatiModel, dataset=[]):
     if len(dataset) == 0:
-        dataset = read_dataset(model.calibration_dataset, FIELDNAMES_OPTIONS["wire_samples"]) 
+        dataset = read_dataset(model.calibration_dataset, model.fieldnames_options["wire_samples"]) 
         dataset[:,0:6] = dataset[:,0:6] * DEG
-    for i in range (len(ERRORS_LIST)):
+    for i in range (len(model.error_list)):
         single_param_dataset = dataset[dataset[:, 6] == i]
         if(len(single_param_dataset) == 0):
             continue
 
         optimizing_param = calibrate_single_param(model, single_param_dataset)        
         
-        param_num, param_letter_num = model.params_from_letters(ERRORS_LIST[i])
+        param_num, param_letter_num = model.params_from_letters(model.error_list[i])
         # nominal_value = model.nominal_dh[param_num][param_letter_num]
         # real_value = model.real_dh[param_num][param_letter_num]
         final_value = optimizing_param.x[0]
@@ -54,7 +53,7 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[]):
 
 def calibrate_single_param(model: hayati_model.HayatiModel, dataset: Union[np.ndarray, list], delta=10/1000):
     param_index = int(dataset[0,6])
-    param_num, param_letter_num = model.params_from_letters(ERRORS_LIST[param_index])
+    param_num, param_letter_num = model.params_from_letters(model.error_list[param_index])
     real_distances = dataset[:,7]
 
     def loss_function(optimizing_param):
@@ -70,7 +69,7 @@ def calibrate_single_param(model: hayati_model.HayatiModel, dataset: Union[np.nd
         
         return error
 
-    #print(f"Optimizing param {ERRORS_LIST[param_index]}...")
+    #print(f"Optimizing param {model.error_list[param_index]}...")
 
     res = minimize(loss_function, x0=model.nominal_dh[param_num][param_letter_num], 
                    method='Nelder-Mead', tol=1e-10)
@@ -83,7 +82,7 @@ def calculate_estimated_distance(model: hayati_model.HayatiModel, angles: Union[
     return distance
 
 def check_results(model: hayati_model.HayatiModel):
-    poses = read_dataset(model.test_dataset_file, FIELDNAMES_OPTIONS["random_poses"])
+    poses = read_dataset(model.test_dataset_file, model.fieldnames_options["random_poses"])
     
     nominal_data = np.array([model.get_transition_matrix(pose, "nominal")[0:3, 3] for pose in poses])
     real_data = np.array([model.get_transition_matrix(pose, "real")[0:3, 3] for pose in poses])
@@ -101,7 +100,7 @@ def check_results(model: hayati_model.HayatiModel):
     avg_est_error = np.sum(estimated_dist) / len (estimated_dist)
     median = np.array([0, 0, 0, 0, 0, 0, avg_nom_error, avg_est_error, avg_error]).reshape(1, 9)
     printable_res = np.append(printable_res, median, axis=0)
-    write_dataset(printable_res, model.results_file, FIELDNAMES_OPTIONS["test_result"], tolerance=".3f")
+    write_dataset(printable_res, model.results_file, model.fieldnames_options["test_result"], tolerance=".3f")
     return avg_nom_error, avg_est_error
 
 def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
@@ -110,8 +109,8 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
     local_nominal_error = 0.0
     local_estimated_error = 0.0
     for _ in range(tries_count):
-        if generate == "True":
-            new_dh = generate_real_dh(copy_model, model.angle_delta, model.distance_delta)
+        if generate == "true":
+            new_dh = generate_real_dh(copy_model)
             copy_model.change_real_dh(new_dh)
         dataset = measure_all_distances(copy_model)
         execute_calibration(copy_model, dataset=dataset)
@@ -124,7 +123,7 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
     local_estimated_error /= tries_count
     return local_nominal_error, local_estimated_error
 
-def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: int, genarate="False"):
+def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: int, genarate="false"):
     num_cores = cpu_count()
     chunk_size = max(1, (tries_num // num_cores))
 
@@ -143,26 +142,6 @@ def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: i
     nominal_error_median = sum(nominal_error)/len(nominal_error)
     estimated_error_median = sum(estimated_error)/len(estimated_error)
 
-
-    # for local_nominal_error, local_estimated_error in results:
-    #     nominal_error += local_nominal_error
-    #     estimated_error += local_estimated_error
-
-    # nominal_error /= len(results)
-    # estimated_error /= len(results)
-
-    # for _ in range(tries_num):
-    #     if genarate == "True":
-    #         new_dh = generate_real_dh(model, angle_delta=0.5*DEG, len_delta=0.5/1000)
-    #         model.change_real_dh(new_dh)
-    #     make_calibration_dataset(model)
-    #     execute_calibration(model)
-    #     new_nom, new_est = check_results(model)
-    #     nominal_error += new_nom
-    #     estimated_error += new_est
-    #     model.reset_estimated_dh()
-    # nominal_error /= tries_num
-    # estimated_error /= tries_num
     return nominal_error_median, estimated_error_median
 
 def main(args):
@@ -171,13 +150,13 @@ def main(args):
     model = hayati_model.HayatiModel(config)
 
     nominal_error, estimated_error = make_many_calibration_attempts(model, args.num_of_tries, genarate=args.generate)
-    print(f"Nominal error: {nominal_error}\nAfter calibration: {estimated_error}\nDifference: {nominal_error - estimated_error}")
+    print(f"Nominal error: {nominal_error:.6f}\nAfter calibration: {estimated_error:.6f}\nDifference: {(nominal_error - estimated_error):.6f}")
         
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="ARM95.json")
-    parser.add_argument("-g", "--generate", help="Generate new real DH. Default: 'False'", default="False")
+    parser.add_argument("-g", "--generate", help="Generate new real DH. Default: 'false'", default="false")
     parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=1)
     args = parser.parse_args()
     main(args)

@@ -11,10 +11,8 @@ from collections import deque
 import joystick 
 from ctypes import c_float
 import hayati_model
-from dataset_generation_wire import FIELDNAMES_OPTIONS
 from csv_routines import read_dataset
-
-DEG = np.pi / 180
+from math_routines import DEG
 
 class ShowRobot:
     def __init__(self):
@@ -275,9 +273,9 @@ def main(args):
         vizualize_forward_kinematics(model, args.model_type)
     elif args.visualization_type == "dataset":
         if ("calibration" in args.dataset):
-            dataset = read_dataset(args.dataset, FIELDNAMES_OPTIONS["wire_samples"])
+            dataset = read_dataset(args.dataset, model.fieldnames_options["wire_samples"])
         else:
-            dataset = read_dataset(args.dataset, FIELDNAMES_OPTIONS["wire_contributions"])
+            dataset = read_dataset(args.dataset, model.fieldnames_options["wire_contributions"])
         visualize_dataset(model, dataset, args.model_type)
     else:
         raise ValueError("visualization_type should be 'forward_kinematics' or 'dataset'")

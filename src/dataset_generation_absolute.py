@@ -8,6 +8,7 @@ import hayati_model
 from typing import Union
 from csv_routines import write_dataset, add_line_csv, read_dataset
 import copy
+from math_routines import DEG
 
 FIELDNAMES_OPTIONS = {
     "random" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'px_r', 'py_r', 'pz_r', 'rx_r', 'ry_r', 'rz_r'],
@@ -15,19 +16,17 @@ FIELDNAMES_OPTIONS = {
     "random_poses" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6']
 }
 
-DEG = np.pi/180
-
-def generate_real_dh(model:hayati_model.HayatiModel, angle_delta, len_delta):
+def generate_real_dh(model:hayati_model.HayatiModel):
     new_dh = copy.deepcopy(model.nominal_dh)
     for i in range(6):
         if(model.nominal_dh[i][-1] == 0):
-            d_or_beta = len_delta
+            d_or_beta = model.distance_delta
         else:
-            d_or_beta = angle_delta
-        new_dh[i][0] += len_delta * uniform(-1, 1) 
-        new_dh[i][1] += angle_delta * uniform(-1, 1)
+            d_or_beta = model.angle_delta
+        new_dh[i][0] += model.distance_delta * uniform(-1, 1) 
+        new_dh[i][1] += model.angle_delta * uniform(-1, 1)
         new_dh[i][2] += d_or_beta * uniform(-1, 1) 
-        new_dh[i][3] += angle_delta * uniform(-1, 1)
+        new_dh[i][3] += model.angle_delta * uniform(-1, 1)
 
         # print("[")
         # print(f"    {new_dh[i][0]:0.6f}, {new_dh[i][1]:0.6f}, {new_dh[i][2]:0.6f}, {new_dh[i][3]:0.6f}, {model.nominal_dh[i][-1]}")

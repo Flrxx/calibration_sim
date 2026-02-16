@@ -127,17 +127,21 @@
     90.0,
     0.0
   ],
-  "encoder_abs_tolerance": 0.000,
-  "encoder_resolution": 0.0000,
+  "encoder_abs_tolerance_percent": 0.0,
+  "encoder_resolution_mm": 0.0,
   "max_z_angle": 3.14,  
   "generation_output": "datasets/ARM95/wire/generation_output.csv",
-  "contribution_dataset": "datasets/ARM95/wire/contribution_dataset.csv",
+  "contribution_dataset": "datasets/ARM95/wire/working_samples.csv",
   "calibration_dataset": "datasets/ARM95/wire/calibration_dataset.csv",
-
   "test_dataset_file": "datasets/ARM95/absolute/random_samples.csv",
   "results_file": "results/ARM95/test_result.csv",
-  "test_samples_number": 100,
-  "distance_delta": 0.0005,
+
+  "error_list": ["theta_6", "d_6", "theta_5", "theta_4", "a_3", "d_4", "a_2", "theta_3", "theta_2", "a_1"],
+  "wire_limits_l_mm": 15,
+  "wire_limits_h_mm": 10000,
+  "angle_limit_deg": 85,
+  
+  "distance_delta_mm": 0.5,
   "angle_delta_deg": 0.5,
-  "precision": 0.001
+  "test_samples_number": 100
 }
