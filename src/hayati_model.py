@@ -18,7 +18,7 @@ class HayatiModel:
         self.results_file = config["results_file"]
 
         # DH params: [a, alpha, d/beta, theta_offset, parallel_axis]. Angle beta is used instead of d if axis is nearly parallel to the previous
-        self.nominal_dh = config['nominal_dh']
+        self.nominal_dh = np.array(config['nominal_dh'])
         self.nominal_base_params = config['nominal_base_params']
         self.nominal_tool_params = config['nominal_tool_params']
         
@@ -30,7 +30,7 @@ class HayatiModel:
         # self.estimated_base_params = self.nominal_base_params.copy()
         # self.estimated_tool_params = self.nominal_tool_params.copy()
         
-        self.real_dh = config['real_dh']
+        self.real_dh = np.array(config['real_dh'])
         self.real_base_params = config['real_base_params']
         self.real_tool_params = config['real_tool_params']
 
@@ -38,7 +38,7 @@ class HayatiModel:
         
         self.joint_limits_general_h = config["joint_limits_general_h"]
         self.joint_limits_general_l = config["joint_limits_general_l"]
-        self.bounds = [(self.joint_limits_general_l[i], self.joint_limits_general_h[i]) for i in range(6)]
+        self.bounds = np.array([(self.joint_limits_general_l[i], self.joint_limits_general_h[i]) for i in range(6)])
 
 
         self.joint_limits_circle_h = config["joint_limits_circle_h"]
@@ -64,6 +64,8 @@ class HayatiModel:
         self.encoder_abs_tolerance = config["encoder_abs_tolerance_percent"] / 100
         self.encoder_resolution = config["encoder_resolution_mm"] / 1000
         self.error_list = config["error_list"]
+        #self.angles_mask = np.array([1 if any(sub in e for sub in ["", "", ""]) else 0 for e in self.error_list])
+        self.angle_idexes = [i for i, e in enumerate(self.error_list) if any(sub in e for sub in ("alpha", "theta", "beta"))]
         self.fieldnames_options = {
             "wire_contributions" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'index', *self.error_list],
             "wire_samples": ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'index', 'd'],

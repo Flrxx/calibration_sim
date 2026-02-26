@@ -82,9 +82,27 @@ class JointJoysticks:
             width = 400
             height = 30
             joystick_i = LinearJoystick(x, y, width, height, [joysticks_limits_h[i], joysticks_limits_l[i]], i)
-            if(i == 2 or i == 4):
-                joystick_i.value = 90
+            if i == 0:
+                joystick_i.value = 14.95
                 joystick_i.update_knob_position_from_value()
+            if i == 1:
+                joystick_i.value = 23.83
+                joystick_i.update_knob_position_from_value()
+            if i == 2:
+                joystick_i.value = 139.02
+                joystick_i.update_knob_position_from_value()
+            if i == 3:
+                joystick_i.value = -72.84
+                joystick_i.update_knob_position_from_value()
+            if i == 4:
+                joystick_i.value = 90.00
+                joystick_i.update_knob_position_from_value()
+            if i == 5:
+                joystick_i.value = -14.95
+                joystick_i.update_knob_position_from_value()
+            # if(i == 2 or i == 4):
+            #     joystick_i.value = 90
+            #     joystick_i.update_knob_position_from_value()
             self.joysticks.append(joystick_i)
         self.font = pygame.font.Font(None, 36)
         self.big_font = pygame.font.Font(None, 48)

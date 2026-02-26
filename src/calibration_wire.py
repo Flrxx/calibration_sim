@@ -18,6 +18,7 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[]):
     if len(dataset) == 0:
         dataset = read_dataset(model.calibration_dataset, model.fieldnames_options["wire_samples"]) 
         dataset[:,0:6] = dataset[:,0:6] * DEG
+    param_errors = np.zeros(len(model.error_list))
     for i in range (len(model.error_list)):
         single_param_dataset = dataset[dataset[:, 6] == i]
         if(len(single_param_dataset) == 0):
@@ -26,34 +27,121 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[]):
         optimizing_param = calibrate_single_param(model, single_param_dataset)        
         
         param_num, param_letter_num = model.params_from_letters(model.error_list[i])
-        # nominal_value = model.nominal_dh[param_num][param_letter_num]
-        # real_value = model.real_dh[param_num][param_letter_num]
+        nominal_value = model.nominal_dh[param_num][param_letter_num]
+        real_value = model.real_dh[param_num][param_letter_num]
         final_value = optimizing_param.x[0]
-        # error = final_value - real_value
-        # start_error = nominal_value - real_value      
+        final_error = final_value -real_value
+        start_error = nominal_value - real_value  
 
-        # if (real_value != 0):         
-        #     start_error_rel = start_error/real_value 
-        #     end_error_rel = error/real_value 
-        # else:
-        #     start_error_rel = 1.0
-        #     end_error_rel = 1.0
+        if (real_value != 0):         
+            start_error_rel = start_error/real_value
+            final_error_rel = final_error/real_value
+            # print(f"start {i}: {start_error_rel}")
+            # print(f"end {i}: {final_error_rel}")
+
+        else:
+            start_error_rel = 100
+            final_error_rel = 100
 
         # print(f"Nominal value: {nominal_value:.6f}")      
         # print(f"Found value: {final_value:.6f}")
         # print(f"Real value: {real_value:.6f}")
 
-        # print(f"Start error: {start_error:.6f}; {start_error_rel* 100:.2f}%")
-        # print(f"End error: {error:.6f}; {end_error_rel * 100:.4}%")
+        # print(f"Start final_error: {start_error:.6f}; {start_error_rel* 100:.2f}%")
+        # print(f"End final_error: {final_error:.6f}; {end_error_rel * 100:.4}%")
 
         # print("------------------------------------")
 
         model.estimated_dh[param_num][param_letter_num] = final_value 
-        #print(final_value)       
+        if start_error_rel != 0:
+            param_errors[i] = (abs(start_error_rel) - abs(final_error_rel)) / abs(start_error_rel) * 100 #%
+        else:
+            param_errors[i] = 100 #%
+        # print(i)
+        # print(param_errors[i])   
+    return param_errors    
 
-def calibrate_single_param(model: hayati_model.HayatiModel, dataset: Union[np.ndarray, list], delta=10/1000):
+def calibrate_single_param(model: hayati_model.HayatiModel, dataset: Union[np.ndarray, list]):
     param_index = int(dataset[0,6])
     param_num, param_letter_num = model.params_from_letters(model.error_list[param_index])
+    real_distances = dataset[:,7]
+
+    def loss_function(optimizing_param):
+        model.estimated_dh[param_num][param_letter_num] = optimizing_param[0]
+
+        zero_pos = model.get_transition_matrix(model.zero_wire_angles, "estimated")[0:3, 3]
+        d_theor_list = np.zeros((len(dataset)))
+        for i, angles in enumerate(dataset):
+            d_theor_list[i] = calculate_estimated_distance(model, angles, zero_pos)
+        
+        diff = d_theor_list - real_distances
+        error = np.sum(diff**2)
+        
+        return error
+
+    #print(f"Optimizing param {model.error_list[param_index]}...")
+
+    res = minimize(loss_function, x0=model.nominal_dh[param_num][param_letter_num], 
+                   method='Nelder-Mead', tol=1e-10)
+    return res
+
+def execute_calibration_group(model: hayati_model.HayatiModel, dataset=[]):
+    if len(dataset) == 0:
+        dataset = read_dataset(model.calibration_dataset, model.fieldnames_options["wire_samples"]) 
+        dataset[:,0:6] = dataset[:,0:6] * DEG
+    param_errors = np.zeros(len(model.error_list))
+    for i in range (len(model.error_list)):
+        single_param_dataset = dataset[dataset[:, 6] == i]
+        if(len(single_param_dataset) == 0):
+            continue
+
+        optimizing_param = calibrate_single_param(model, single_param_dataset)        
+        
+        param_num, param_letter_num = model.params_from_letters(model.error_list[i])
+        nominal_value = model.nominal_dh[param_num][param_letter_num]
+        real_value = model.real_dh[param_num][param_letter_num]
+        final_value = optimizing_param.x[0]
+        final_error = final_value -real_value
+        start_error = nominal_value - real_value  
+
+        if (real_value != 0):         
+            start_error_rel = start_error/real_value
+            final_error_rel = final_error/real_value
+            # print(f"start {i}: {start_error_rel}")
+            # print(f"end {i}: {final_error_rel}")
+
+        else:
+            start_error_rel = 100
+            final_error_rel = 100
+
+        # print(f"Nominal value: {nominal_value:.6f}")      
+        # print(f"Found value: {final_value:.6f}")
+        # print(f"Real value: {real_value:.6f}")
+
+        # print(f"Start final_error: {start_error:.6f}; {start_error_rel* 100:.2f}%")
+        # print(f"End final_error: {final_error:.6f}; {end_error_rel * 100:.4}%")
+
+        # print("------------------------------------")
+
+        model.estimated_dh[param_num][param_letter_num] = final_value 
+        if start_error_rel != 0:
+            param_errors[i] = (abs(start_error_rel) - abs(final_error_rel)) / abs(start_error_rel) * 100 #%
+        else:
+            param_errors[i] = 100 #%
+        # print(i)
+        # print(param_errors[i])   
+    return param_errors    
+
+def calibrate_group_of_params(model: hayati_model.HayatiModel, dataset: Union[np.ndarray, list], bourders: int):
+    #param_index = int(dataset[0,6])
+    target_params = model.error_list[bourders[0]:bourders[1]]
+    param_num_list = []
+    param_letter_list = []
+    for target in target_params:
+        param_num, param_letter_num = model.params_from_letters(target)
+        param_num_list.append(param_num)
+        param_letter_list.append(param_letter_num)
+
     real_distances = dataset[:,7]
 
     def loss_function(optimizing_param):
@@ -94,6 +182,10 @@ def check_results(model: hayati_model.HayatiModel):
     estimated_dist = np.linalg.norm(estimated_diff, axis=1).reshape(len(poses), 1)
     delta = nominal_dist - estimated_dist
 
+    nom_params_errors = model.real_dh - model.nominal_dh
+    est_params_errors = model.real_dh - model.estimated_dh
+    params_errors = (nom_params_errors - est_params_errors)
+
     printable_res = np.concatenate((poses/DEG, nominal_dist, estimated_dist, delta), axis=1)
     avg_error = np.sum(delta) / len(delta)
     avg_nom_error = np.sum(nominal_dist)/len(nominal_dist)
@@ -105,6 +197,7 @@ def check_results(model: hayati_model.HayatiModel):
 
 def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
     copy_model = copy.deepcopy(model)
+    param_errors = np.zeros(len(model.error_list))
 
     local_nominal_error = 0.0
     local_estimated_error = 0.0
@@ -113,22 +206,23 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
             new_dh = generate_real_dh(copy_model)
             copy_model.change_real_dh(new_dh)
         dataset = measure_all_distances(copy_model)
-        execute_calibration(copy_model, dataset=dataset)
+        param_errors += execute_calibration(copy_model, dataset=dataset)
         new_nom, new_est = check_results(copy_model)
         local_nominal_error += new_nom
         local_estimated_error += new_est
         copy_model.reset_estimated_dh()
     
+    param_errors /= tries_count
     local_nominal_error /= tries_count
     local_estimated_error /= tries_count
-    return local_nominal_error, local_estimated_error
+    return local_nominal_error, local_estimated_error, param_errors
 
 def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: int, genarate="false"):
     num_cores = cpu_count()
     chunk_size = max(1, (tries_num // num_cores))
 
     tasks = []
-    for i in range(num_cores):
+    for i in range(min(num_cores, chunk_size)):
         current_tries = chunk_size
         if current_tries > 0:
             tasks.append((model, chunk_size, genarate))        
@@ -138,25 +232,27 @@ def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: i
 
     nominal_error = [x[0] for x in results]
     estimated_error = [x[1] for x in results]
+    params_error = np.array([x[2] for x in results])
 
     nominal_error_median = sum(nominal_error)/len(nominal_error)
     estimated_error_median = sum(estimated_error)/len(estimated_error)
+    params_error_median = np.sum(params_error, axis=0)/len(params_error)
 
-    return nominal_error_median, estimated_error_median
+    return nominal_error_median, estimated_error_median, params_error_median
 
 def main(args):
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
     model = hayati_model.HayatiModel(config)
 
-    nominal_error, estimated_error = make_many_calibration_attempts(model, args.num_of_tries, genarate=args.generate)
+    nominal_error, estimated_error, params_error = make_many_calibration_attempts(model, args.num_of_tries, genarate=args.generate)
     print(f"Nominal error: {nominal_error:.6f}\nAfter calibration: {estimated_error:.6f}\nDifference: {(nominal_error - estimated_error):.6f}")
-        
+    print(params_error)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="ARM95.json")
-    parser.add_argument("-g", "--generate", help="Generate new real DH. Default: 'false'", default="false")
-    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=1)
+    parser.add_argument("-g", "--generate", help="Generate new real DH. Default: 'false'", default="true")
+    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=100)
     args = parser.parse_args()
     main(args)
