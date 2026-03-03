@@ -1,0 +1,10 @@
+{
+    "robot":{
+        "name": "ARM95",
+        "paths":
+        {
+            "toolCoordinate": "root/ManipulatorControl/manipulatorToolPoseActual",
+            "jointPosition": "root/ManipulatorControl/jointPositionsActual"
+        }
+    }
+}
