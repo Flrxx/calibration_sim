@@ -120,12 +120,12 @@
   ],
 
 "zero_wire_angles":[
-    14.95,
-    23.83,
-    139.02,
-    -72.84,
+    14.936,
+    23.34,
+    139.038,
+    -72.362,
     90.00,
-    -14.95
+    -14.938
   ],
   "encoder_abs_tolerance_percent": 0.0,
   "encoder_resolution_mm": 0.0,
@@ -136,7 +136,7 @@
   "test_dataset_file": "datasets/ARM95/absolute/random_samples.csv",
   "results_file": "results/ARM95/test_result.csv",
 
-  "error_list": ["alpha_6", "theta_6", "d_6", "a_6", "a_5", "alpha_5", "d_5", "theta_5", "a_4", "alpha_4", "d_4", "theta_4", 
+  "error_list": ["alpha_6", "theta_6", "a_6", "a_5", "d_6", "alpha_5", "theta_5", "a_4", "alpha_4", "d_5",  "d_4", "theta_4", 
                 "a_3", "alpha_3", "beta_3", "theta_3", "a_2", "alpha_2", "beta_2", "theta_2", "a_1", "alpha_1", "d_1", "theta_1"],
   "wire_limits_l_mm": 15,
   "wire_limits_h_mm": 10000,

@@ -4,6 +4,7 @@ import logging.handlers
 import json
 import time
 import copy
+import serial
 
 from csv_routines import read_dataset, write_dataset
 from robot_control.motion_program import Waypoint, MotionProgram, PoseTransformer
@@ -14,6 +15,9 @@ import hayati_model
 from math import sqrt, pi
 import numpy as np
 from math_routines import DEG
+
+PORT = '/dev/ttyUSB0'
+BAUD_RATE = 9600
 
 def get_parameters(path: str) -> None:
     try:
@@ -30,6 +34,11 @@ class MCX:
             os.path.join(self._path, "src/config", config))
         if not self.__connect("192.168.2.100"):
             raise Exception('Failed to connect') 
+        try:
+            self.ser = serial.Serial(PORT, BAUD_RATE, timeout=2)
+            print(f"--- Connected to {PORT} ---")
+        except serial.SerialException as e:
+            print(f"Error: {e}")
 
 
     def __project_path(self) -> str:
@@ -86,56 +95,62 @@ class MCX:
         while self.robot.getState() is InterpreterStates.PROGRAM_RUN_S.value:
             time.sleep(0.1)
         self.motion_program.clear()
-    
-    def move_through_dataset(self, model: hayati_model.HayatiModel):
-        dataset_poses = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])[:, 0:7]
-        dataset_poses[:, 0:6] *= DEG
-        self.motion_program.addMoveJ([Waypoint([0, 0, pi/2, 0, pi/2, 0])])
+
+    def get_wire_distance(self, null_value):
+        self.ser.reset_input_buffer() 
+        line = self.ser.readline().decode('utf-8').strip()
+        value = float(line) # mm
+        value -= null_value
+        return value
+
+    def execute_moveL(self, point: np.ndarray, velocity=0.01):
+        self.motion_program.addMoveL([Waypoint(point)], velocity=velocity)
         self.execute_move()
-        
-        zero_pose = model.zero_wire_angles.copy()
+    
+    def execute_moveJ(self, pose: np.ndarray, rotational_velocity=0.1):
+        self.motion_program.addMoveJ([Waypoint(pose)], rotational_velocity=rotational_velocity)
+        self.execute_move()
+
+    def move_through_dataset(self, dataset_poses: np.ndarray, zero_pose: np.ndarray):        
         zero_point = self.robot_PoseTransformer.calcJointToCartPose(zero_pose).jointtocartlist[0].cartpose.coordinates
 
-        self.motion_program.addMoveJ([Waypoint(zero_pose)])
-        self.execute_move()
-
         result = np.zeros(shape=(len(dataset_poses), 8))
-        for i, pose in enumerate(dataset_poses):
-            result[i, 6] = pose[6]
-            pose = pose[:6]
+        result[:, 6] = dataset_poses[:, 6]
+        dataset_poses = dataset_poses[:6]
 
+        self.execute_moveJ(zero_pose)
+        null_value = self.get_wire_distance(0)
+        for i, pose in enumerate(dataset_poses):      
             tcp_coords_nom = self.robot_PoseTransformer.calcJointToCartPose(pose).jointtocartlist[0].cartpose.coordinates[0:3]
             distance_theor = sqrt((tcp_coords_nom[0] - zero_point[0])**2 + (tcp_coords_nom[1] - zero_point[1])**2 + (tcp_coords_nom[2] - zero_point[2])**2)
             
-            vertical_offset =  copy.deepcopy(zero_point)
-            vertical_offset[2] += distance_theor
+            vertical_offset_point =  copy.deepcopy(zero_point)
+            vertical_offset_point[2] += distance_theor
             
-            self.motion_program.addMoveL([Waypoint(vertical_offset)])
-            self.execute_move()
-            #time.sleep(1)
-            pose_vertical_offset = self.joint_subscription.read()[0].value
+            self.execute_moveL(vertical_offset_point)
+            time.sleep(1)
+            vertical_offset_pose = self.joint_subscription.read()[0].value
 
-            self.motion_program.addMoveJ([Waypoint(pose)])
-            self.execute_move()
-            #time.sleep(1)
+            self.execute_moveJ(pose)
+            wire_len = self.get_wire_distance(null_value)
+            print(f"Wire lenght: {wire_len}")
+            time.sleep(3)
 
-            result[i, 7] = 99 # get wire dist
-             # index
+            result[i, 7] = wire_len # get wire dist
             result[i, 0:6] = self.joint_subscription.read()[0].value
-            
-            self.motion_program.addMoveJ([Waypoint(pose_vertical_offset)])
-            self.execute_move()
-
-            self.motion_program.addMoveL([Waypoint(vertical_offset)])
-            self.execute_move()
-
-            self.motion_program.addMoveJ([Waypoint(zero_pose)])
-            self.execute_move()
+ 
+            self.execute_moveJ(vertical_offset_pose)
+            self.execute_moveL(zero_point)
+            time.sleep(1)
+            null_value = self.get_wire_distance(0)
+            print(f"Null value: {null_value}")
             print(f"Pose {i + 1} done")
         return result
     
-    def write_calibration_dataset(self, model: hayati_model.HayatiModel):
-        calibration_dataset = self.move_through_dataset(model)
+    def write_calibration_dataset(self, model: hayati_model.HayatiModel):              
+        contribution_dataset = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])[:, 0:7]
+        contribution_dataset[:, 0:6] *= DEG
+        calibration_dataset = self.move_through_dataset(contribution_dataset, model.zero_wire_angles.copy())
         calibration_dataset[:, 0:6] /= DEG
         write_dataset(calibration_dataset, model.calibration_dataset, model.fieldnames_options["wire_samples"])
         print("Done")
