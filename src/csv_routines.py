@@ -20,7 +20,7 @@ def add_line_csv(row: np.ndarray, filename: str, fieldnames: list[str], toleranc
         
         # Logic: If row[index] is 0, use "", else format with tolerance
         formatted_row = {
-            name: (f"{row[index]:{tolerance}}" if not np.isclose(row[index], 0, atol=1e-6) else "") 
+            name: (f"{row[index]:{tolerance}}" if not np.isclose(row[index], 0, atol=1e-4) else "") 
             for index, name in enumerate(fieldnames)
         }
         

@@ -72,7 +72,7 @@ class HayatiModel:
             "random_poses" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6'],
             "test_result": ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'delta']
         }
-        self.wire_limits = [config["wire_limits_l_mm"] / 1000, config["wire_limits_l_mm"] / 1000]
+        self.wire_limits = [config["wire_limits_l_mm"] / 1000, config["wire_limits_h_mm"] / 1000]
         self.angle_limit = config["angle_limit_deg"] * DEG
 
         self.distance_delta = config["distance_delta_mm"] / 1000
