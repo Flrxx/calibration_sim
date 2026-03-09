@@ -17,16 +17,26 @@ FIELDNAMES_OPTIONS = {
 }
 
 def generate_real_dh(model:hayati_model.HayatiModel):
+    ignore_indexes = np.zeros(shape=(len(model.ignore_error_list),2), dtype=int)
+    for i, index in enumerate(model.ignore_error_list):
+        ignore_indexes[i] = np.array(model.params_from_letters(index))
     new_dh = copy.deepcopy(model.nominal_dh)
+    
+    mask = np.ones(shape=(6, 4))
+    for index_row in ignore_indexes:
+        mask[index_row[0], index_row[1]] = 0
+
     for i in range(6):
+
         if(model.nominal_dh[i][-1] == 0):
             d_or_beta = model.distance_delta
         else:
             d_or_beta = model.angle_delta
-        new_dh[i][0] += model.distance_delta * uniform(-1, 1) 
-        new_dh[i][1] += model.angle_delta * uniform(-1, 1)
-        new_dh[i][2] += d_or_beta * uniform(-1, 1) 
-        new_dh[i][3] += model.angle_delta * uniform(-1, 1)
+        
+        new_dh[i][0] += model.distance_delta * uniform(-1, 1) * mask[i, 0]
+        new_dh[i][1] += model.angle_delta * uniform(-1, 1) * mask[i, 1]
+        new_dh[i][2] += d_or_beta * uniform(-1, 1) * mask[i, 2]
+        new_dh[i][3] += model.angle_delta * uniform(-1, 1) * mask[i, 3]
 
         # print("[")
         # print(f"    {new_dh[i][0]:0.6f}, {new_dh[i][1]:0.6f}, {new_dh[i][2]:0.6f}, {new_dh[i][3]:0.6f}, {model.nominal_dh[i][-1]}")
@@ -100,13 +110,13 @@ def main(args):
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
     model = hayati_model.HayatiModel(config)
-
+    generate_real_dh(model)
     if args.generate:
         generate_dataset(model)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="ARM95.json")
+    parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="src/config/ARM95_calibration.json")
     parser.add_argument("-g", "--generate", help="Generate poses. Default: true", type=bool, default=True)
     args = parser.parse_args()
     main(args)

@@ -1,7 +1,7 @@
 {
   "joint_limits_general_h": [
     4.71,
-    2.62,
+    1.4,
     2.79,
     3.14,
     3.14,
@@ -9,7 +9,7 @@
   ],
   "joint_limits_general_l": [
     -4.71,
-    -2.62,
+    -1.4,
     -2.79,
     -3.14,
     -3.14,
@@ -127,8 +127,8 @@
     90.00,
     -14.938
   ],
-  "encoder_abs_tolerance_percent": 0.0,
-  "encoder_resolution_mm": 0.0,
+  "encoder_abs_tolerance_percent": 0.08,
+  "encoder_resolution_mm": 0.05,
   "max_z_angle": 3.14,  
   "generation_output": "datasets/ARM95/wire/generation_output.csv",
   "contribution_dataset": "datasets/ARM95/wire/contribution_dataset.csv",
@@ -136,8 +136,8 @@
   "test_dataset_file": "datasets/ARM95/absolute/random_samples.csv",
   "results_file": "results/ARM95/test_result.csv",
 
-  "error_list": ["alpha_6", "theta_6", "a_6", "a_5", "d_6", "alpha_5", "theta_5", "a_4", "d_5", "alpha_4", "theta_4", 
-                 "beta_3", "alpha_3", "a_3", "theta_3", "beta_2", "alpha_2", "a_2", "d_4", "theta_2", "a_1", "alpha_1", 
+  "error_list": ["alpha_6", "theta_6", "a_6", "a_5", "alpha_5", "d_6", "theta_5", "a_4", "d_5", "alpha_4", "theta_4", 
+                 "beta_3", "alpha_3", "a_3", "theta_3", "beta_2", "alpha_2", "a_2", "d_4", "theta_2", "alpha_1", "a_1",  
                  "d_1", "theta_1"],
   "wire_limits_l_mm": 15,
   "wire_limits_h_mm": 10000,
@@ -145,5 +145,6 @@
   
   "distance_delta_mm": 1.0,
   "angle_delta_deg": 1.0,
+  "ignore_errors_list": [],
   "test_samples_number": 100
 }

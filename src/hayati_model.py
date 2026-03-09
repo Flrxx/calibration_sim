@@ -77,6 +77,7 @@ class HayatiModel:
 
         self.distance_delta = config["distance_delta_mm"] / 1000
         self.angle_delta = config["angle_delta_deg"] * DEG
+        self.ignore_error_list = config["ignore_errors_list"]
     
     def get_transforms(self, angles: Union[np.ndarray, list], params: list) -> list:
         tfs = []

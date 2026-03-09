@@ -18,7 +18,7 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[]):
     if len(dataset) == 0:
         dataset = read_dataset(model.calibration_dataset, model.fieldnames_options["wire_samples"]) 
         dataset[:,0:6] = dataset[:,0:6] * DEG
-    #param_errors = np.zeros(len(model.error_list))
+    param_errors = np.zeros(len(model.error_list))
     for i in range (len(model.error_list)):
         single_param_dataset = dataset[dataset[:, 6] == i]
         if(len(single_param_dataset) == 0):
@@ -53,12 +53,11 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[]):
         # print("------------------------------------")
 
         model.estimated_dh[param_num][param_letter_num] = final_value 
-        # if start_error_rel != 0:
-        #     param_errors[i] = (abs(start_error_rel) - abs(final_error_rel)) / abs(start_error_rel) * 100 #%
-        # else:
-        #     param_errors[i] = 100 #%  
-    #return param_errors    
-    return [param_num, param_letter_num]
+        if start_error_rel != 0:
+            param_errors[i] = (abs(start_error_rel) - abs(final_error_rel)) / abs(start_error_rel) * 100 #%
+        else:
+            param_errors[i] = 100 #%  
+    return [param_num, param_letter_num], param_errors 
 
 def calibrate_single_param(model: hayati_model.HayatiModel, dataset: Union[np.ndarray, list]):
     param_index = int(dataset[0,6])
@@ -89,98 +88,6 @@ def calibrate_single_param(model: hayati_model.HayatiModel, dataset: Union[np.nd
     res = minimize(loss_function, x0=model.nominal_dh[param_num][param_letter_num], 
                    method='Nelder-Mead', tol=1e-10, bounds=bounds)
     return res
-
-# def execute_calibration_group(model: hayati_model.HayatiModel, bourders_list: Union[np.ndarray, list], dataset=[]):
-#     if len(dataset) == 0:
-#         dataset = read_dataset(model.calibration_dataset, model.fieldnames_options["wire_samples"]) 
-#         dataset[:,0:6] = dataset[:,0:6] * DEG
-#     param_errors = np.zeros(len(model.error_list))
-#     for bourders in bourders_list:
-#         mask = (dataset[:, 6] >= bourders[0]) & (dataset[:, 6] < bourders[1])
-#         group_dataset = dataset[mask]
-#         if(len(group_dataset) == 0):
-#             continue
-#         target_indexes = set(group_dataset[:, 6])
-#         target_params = [model.error_list[int(i)] for i in target_indexes]
-#         param_num_list = []
-#         param_letter_list = []
-#         for target in target_params:
-#             param_num, param_letter_num = model.params_from_letters(target)
-#             param_num_list.append(param_num)
-#             param_letter_list.append(param_letter_num)
-
-#         optimizing_params = calibrate_group_of_params(model, group_dataset, param_num_list, param_letter_list) 
-#         estimated_values_list = optimizing_params.x
-        
-#         nominal_values_list = np.zeros(len(param_letter_list))
-#         real_values_list = np.zeros(len(param_letter_list))
-#         for i in range(len(param_num_list)):
-#             nominal_values_list[i] = model.nominal_dh[param_num_list[i]][param_letter_list[i]]
-#             real_values_list[i] = model.real_dh[param_num_list[i]][param_letter_list[i]]
-#             model.estimated_dh[param_num_list[i]][param_letter_list[i]] = estimated_values_list[i] 
-
-#         final_error = estimated_values_list - real_values_list
-#         start_error = nominal_values_list - real_values_list  
-#         #final_error = np.zeros(len(model.error_list))
-#         if (np.all(real_values_list != 0)):         
-#             start_error_rel = start_error/real_values_list
-#             final_error_rel = final_error/real_values_list
-#             # print("---")
-#             # print(start_error_rel)
-#             # print(final_error_rel)
-#             # print(f"start {i}: {start_error_rel}")
-#             # print(f"end {i}: {final_error_rel}")
-
-#         else:
-#             start_error_rel = None
-#             final_error_rel = None
-
-#         # print(f"Nominal value: {nominal_value:.6f}")      
-#         # print(f"Found value: {final_value:.6f}")
-#         # print(f"Real value: {real_value:.6f}")
-
-#         # print(f"Start final_error: {start_error:.6f}; {start_error_rel* 100:.2f}%")
-#         # print(f"End final_error: {final_error:.6f}; {end_error_rel * 100:.4}%")
-
-#         # print("------------------------------------")
-
-#         if (np.all(start_error_rel != 0)):
-#             for num, index in enumerate(target_indexes):
-#                 param_errors[int(index)] = (abs(start_error_rel[num]) - abs(final_error_rel[num])) / abs(start_error_rel[num]) * 100 #%
-#         else:
-#             param_errors[bourders[0]: bourders[1]] = None #%
-#         # print(i)
-#         # print(param_errors[i])   
-#     return param_errors    
-
-# def calibrate_group_of_params(model: hayati_model.HayatiModel, dataset: Union[np.ndarray, list], param_num_list, param_letter_list):
-#     #param_index = int(dataset[0,6])
-#     real_distances = dataset[:,7]
-
-#     def loss_function(optimizing_params):
-#         for i in range(len(param_num_list)):
-#             model.estimated_dh[param_num_list[i]][param_letter_list[i]] = optimizing_params[i]
-
-#         zero_pos = model.get_transition_matrix(model.zero_wire_angles, "estimated")[0:3, 3]
-#         d_theor_list = np.zeros((len(dataset)))
-#         for i, angles in enumerate(dataset):
-#             d_theor_list[i] = calculate_estimated_distance(model, angles, zero_pos)
-        
-#         diff = d_theor_list - real_distances
-#         error = np.sum(diff**2)
-        
-#         return error
-
-#     #print(f"Optimizing param {model.error_list[param_index]}...")
-
-#     x0 = np.zeros(len(param_letter_list))
-#     for i in range(len(param_num_list)):
-#             x0[i] = model.nominal_dh[param_num_list[i]][param_letter_list[i]]
-
-
-#     res = minimize(loss_function, x0=x0, 
-#                    method='Nelder-Mead', tol=1e-10)
-#     return res
 
 def calculate_estimated_distance(model: hayati_model.HayatiModel, angles: Union[np.ndarray, list], zero_pos: Union[np.ndarray, list]):
     [x, y, z] = model.get_transition_matrix(angles, "estimated")[0:3, 3]
@@ -226,7 +133,7 @@ def check_results(model: hayati_model.HayatiModel, last_indexes: list):
 
 def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
     copy_model = copy.deepcopy(model)
-    param_errors = np.zeros(len(model.error_list))
+    local_param_errors = np.zeros(len(model.error_list))
 
     local_nominal_error = 0.0
     local_estimated_error = 0.0
@@ -236,8 +143,8 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
             new_dh = generate_real_dh(copy_model)
             copy_model.change_real_dh(new_dh)
         dataset = measure_all_distances(copy_model)
-        #param_errors += 
-        last_indexes = execute_calibration(copy_model, dataset=dataset)
+        last_indexes, param_errors_new = execute_calibration(copy_model, dataset=dataset)
+        local_param_errors += param_errors_new
         #param_errors += execute_calibration_group(copy_model, [[0, 6]], dataset=dataset)
         new_nom, new_est, new_esp_prev = check_results(copy_model, last_indexes)
         local_nominal_error += new_nom
@@ -245,11 +152,11 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
         local_estimated_error_prev += new_esp_prev
         copy_model.reset_estimated_dh()
     
-    #param_errors /= tries_count
+    local_param_errors /= tries_count
     local_nominal_error /= tries_count
     local_estimated_error /= tries_count
     local_estimated_error_prev /= tries_count
-    return local_nominal_error, local_estimated_error, local_estimated_error_prev#, param_errors
+    return local_nominal_error, local_estimated_error, local_estimated_error_prev, local_param_errors
 
 def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: int, genarate="false"):
     num_cores = cpu_count()
@@ -267,29 +174,29 @@ def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: i
     nominal_error = [x[0] for x in results]
     estimated_error = [x[1] for x in results]
     estimated_error_prev = [x[2] for x in results]
-    #params_error = np.array([x[2] for x in results])
+    params_error = np.array([x[3] for x in results])
 
     nominal_error_median = sum(nominal_error)/len(nominal_error)
     estimated_error_median = sum(estimated_error)/len(estimated_error)
     estimated_error_prev_median = sum(estimated_error_prev)/len(estimated_error_prev)
-    #params_error_median = np.sum(params_error, axis=0)/len(params_error)
+    params_error_median = np.sum(params_error, axis=0)/len(params_error)
 
-    return nominal_error_median, estimated_error_median, estimated_error_prev_median#, params_error_median
+    return nominal_error_median, estimated_error_median, estimated_error_prev_median, params_error_median
 
 def main(args):
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
     model = hayati_model.HayatiModel(config)
 
-    nominal_error, estimated_error, estimated_error_prev = make_many_calibration_attempts(model, args.num_of_tries, genarate=args.generate)  # ,params_error
+    nominal_error, estimated_error, estimated_error_prev, params_error = make_many_calibration_attempts(model, args.num_of_tries, genarate=args.generate)  # ,params_error
     print(f"Nominal error: {nominal_error:.6f}\nAfter calibration: {estimated_error:.6f}\n\nDifference: {(nominal_error - estimated_error):.6f}")
 
     print(f"Previous difference: {(nominal_error - estimated_error_prev):.6f}\n\nContribution of new: {(estimated_error_prev - estimated_error):.6f}")
-    #print(params_error)
+    print(params_error)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="ARM95_new.json")
+    parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: src/config/ARM95_calibration.json", default="src/config/ARM95_calibration.json")
     parser.add_argument("-g", "--generate", help="Generate new real DH. Default: 'false'", default="true")
     parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=1)
     args = parser.parse_args()
