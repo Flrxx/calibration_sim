@@ -197,7 +197,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: src/config/ARM95_calibration.json", default="src/config/ARM95_calibration.json")
-    parser.add_argument("-g", "--generate", help="Generate new real DH. Default: 'false'", default="true")
-    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=1)
+    parser.add_argument("-g", "--generate", help="Generate new real DH. Default: 'true'", default="true")
+    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=10)
     args = parser.parse_args()
     main(args)

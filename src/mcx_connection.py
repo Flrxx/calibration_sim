@@ -28,15 +28,18 @@ def get_parameters(path: str) -> None:
         return e
 
 class MCX:
-    def __init__(self, config="config/ARM95.json"):
+    def __init__(self, config="config/ARM95.json", is_real=True, start_num=2):
         self._path = self.__project_path()
+        self.is_real = is_real
+        self.start_num = start_num - 2
         self.robot_parameters = get_parameters(
             os.path.join(self._path, "src/config", config))
         if not self.__connect("192.168.2.100"):
             raise Exception('Failed to connect') 
         try:
-            self.ser = serial.Serial(PORT, BAUD_RATE, timeout=2)
-            print(f"--- Connected to {PORT} ---")
+            if self.is_real:
+                self.ser = serial.Serial(PORT, BAUD_RATE, timeout=2)
+                print(f"--- Connected to {PORT} ---")
         except serial.SerialException as e:
             print(f"Error: {e}")
 
@@ -58,10 +61,11 @@ class MCX:
             self.req, self.sub = motorcortex.connect(f'wss://{ip}:5568:5567', self.motorcortex_types, parameter_tree,
                                                     timeout_ms=1000, certificate=license_file,
                                                     login="admin", password="motioncore")
-            self.subscription = self.sub.subscribe(
+            self.pose_subscription = self.sub.subscribe(
                 [self.robot_parameters['robot']['paths']['toolCoordinate']], 'group1', 1)
             self.joint_subscription = self.sub.subscribe(
                 [self.robot_parameters['robot']['paths']['jointPosition']], 'group2', 1)
+        
 
         except Exception as e:
             logging.error(f"ip: {ip}")
@@ -97,13 +101,16 @@ class MCX:
         self.motion_program.clear()
 
     def get_wire_distance(self, null_value):
-        self.ser.reset_input_buffer() 
-        line = self.ser.readline().decode('utf-8').strip()
-        value = float(line) # mm
-        value -= null_value
+        if self.is_real:
+            self.ser.reset_input_buffer() 
+            line = self.ser.readline().decode('utf-8').strip()
+            value = float(line) # mm
+            value -= null_value
+        else:
+            value = -1
         return value
 
-    def execute_moveL(self, point: np.ndarray, velocity=0.01):
+    def execute_moveL(self, point: np.ndarray, velocity=0.02):
         self.motion_program.addMoveL([Waypoint(point)], velocity=velocity)
         self.execute_move()
     
@@ -116,40 +123,117 @@ class MCX:
 
         result = np.zeros(shape=(len(dataset_poses), 8))
         result[:, 6] = dataset_poses[:, 6]
-        dataset_poses = dataset_poses[:6]
-
+        #dataset_poses = dataset_poses[:, :6]
+        
         self.execute_moveJ(zero_pose)
         null_value = self.get_wire_distance(0)
-        for i, pose in enumerate(dataset_poses):      
-            tcp_coords_nom = self.robot_PoseTransformer.calcJointToCartPose(pose).jointtocartlist[0].cartpose.coordinates[0:3]
-            distance_theor = sqrt((tcp_coords_nom[0] - zero_point[0])**2 + (tcp_coords_nom[1] - zero_point[1])**2 + (tcp_coords_nom[2] - zero_point[2])**2)
+        previous_poses = []
+        last_index = 0
+        for i, pose in enumerate(dataset_poses): 
             
-            vertical_offset_point =  copy.deepcopy(zero_point)
-            vertical_offset_point[2] += distance_theor
-            
-            self.execute_moveL(vertical_offset_point)
-            time.sleep(1)
-            vertical_offset_pose = self.joint_subscription.read()[0].value
+            if pose[6] == -1:  # extra point
+                print(f"Extra pose {i + 2 + self.start_num}")     
 
-            self.execute_moveJ(pose)
-            wire_len = self.get_wire_distance(null_value)
-            print(f"Wire lenght: {wire_len}")
-            time.sleep(3)
+                start_pose = self.joint_subscription.read()[0].value
+                #pose_coords = self.robot_PoseTransformer.calcJointToCartPose(pose).jointtocartlist[0].cartpose.coordinates[0:3]
+                self.execute_moveJ(pose[:6])
+                result[i, 7] = -1 # get wire dist
+                result[i, 0:6] = self.joint_subscription.read()[0].value
+                previous_poses.append([*start_pose, -1]) 
+                #input()
+                continue
+            elif pose[6] == -2:
+                print(f"Extra pose {i + 2 + self.start_num}")     
+                start_coords = self.pose_subscription.read()[0].value
+                pose_coords = self.robot_PoseTransformer.calcJointToCartPose(pose[:6]).jointtocartlist[0].cartpose.coordinates
+                self.execute_moveL(pose_coords)
+                result[i, 7] = -1 # get wire dist
+                result[i, 0:6] = self.joint_subscription.read()[0].value
+                previous_poses.append([*start_coords, -2]) 
+                #input()
+                continue
 
-            result[i, 7] = wire_len # get wire dist
-            result[i, 0:6] = self.joint_subscription.read()[0].value
- 
-            self.execute_moveJ(vertical_offset_pose)
-            self.execute_moveL(zero_point)
-            time.sleep(1)
-            null_value = self.get_wire_distance(0)
-            print(f"Null value: {null_value}")
-            print(f"Pose {i + 1} done")
+            elif result[i - 1, 6] < 0:
+                start_pose = self.joint_subscription.read()[0].value
+                previous_poses.append([*start_pose, -1]) 
+
+                print(f"Started pose {i + 2 + self.start_num}")     
+                self.execute_moveJ(pose[:6])
+                wire_len = self.get_wire_distance(null_value)
+                if wire_len > 0:
+                    print(f"Wire lenght: {wire_len}")
+                input()
+                result[i, 7] = wire_len # get wire dist
+                result[i, 0:6] = self.joint_subscription.read()[0].value
+                last_index = pose[6]
+    
+                # for _ in range(len(previous_poses)):
+                #     prev_pose = previous_poses.pop()
+                #     if prev_pose[-1] == -1:
+                #         self.execute_moveJ(prev_pose[:6])
+                #     elif prev_pose[-1] == -2:
+                #         self.execute_moveL(prev_pose[:6])
+                # previous_poses.clear()
+
+                #time.sleep(1)
+                null_value = self.get_wire_distance(0)
+                #print(f"Null value: {null_value}")
+            elif pose[6] >= 0 and last_index != pose[6]: # come to start
+                print("come to start")
+                if len(previous_poses) == 0:
+                    self.execute_moveL(zero_point)
+                else:
+                    for _ in range(len(previous_poses)):
+                        prev_pose = previous_poses.pop()
+                        if prev_pose[-1] == -1:
+                            self.execute_moveJ(prev_pose[:6])
+                        elif prev_pose[-1] == -2:
+                            self.execute_moveL(prev_pose[:6])
+                    previous_poses.clear()
+                    self.execute_moveJ(pose)
+                wire_len = self.get_wire_distance(null_value)
+                if wire_len > 0:
+                    print(f"Wire lenght: {wire_len}")
+                input()
+                last_index = pose[6]
+                null_value = self.get_wire_distance(0)
+                #print(f"Null value: {null_value}")
+                #time.sleep(3)
+            else:
+                print(f"Started pose {i + 2 + self.start_num}")     
+                last_index = pose[6]
+                pose = pose[:6]
+                tcp_coords_nom = self.robot_PoseTransformer.calcJointToCartPose(pose).jointtocartlist[0].cartpose.coordinates[0:3]
+                distance_theor = sqrt((tcp_coords_nom[0] - zero_point[0])**2 + (tcp_coords_nom[1] - zero_point[1])**2 + (tcp_coords_nom[2] - zero_point[2])**2)
+                
+                vertical_offset_point =  copy.deepcopy(zero_point)
+                vertical_offset_point[2] += distance_theor
+                print(f"Theoretical distance: {(distance_theor * 1000):.2f} mm")
+                
+                self.execute_moveL(vertical_offset_point)
+                #time.sleep(1)
+                vertical_offset_pose = self.joint_subscription.read()[0].value
+
+                self.execute_moveJ(pose)
+                wire_len = self.get_wire_distance(null_value)
+                if wire_len > 0:
+                    print(f"Wire lenght: {wire_len}")
+                input()
+                #time.sleep(3)
+
+                result[i, 7] = wire_len # get wire dist
+                result[i, 0:6] = self.joint_subscription.read()[0].value
+    
+                self.execute_moveJ(vertical_offset_pose)
+                #self.execute_moveL(zero_point)
+                #time.sleep(1)
+            print(f"Done pose {i + 2 + self.start_num}")
         return result
     
     def write_calibration_dataset(self, model: hayati_model.HayatiModel):              
         contribution_dataset = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])[:, 0:7]
         contribution_dataset[:, 0:6] *= DEG
+        contribution_dataset = contribution_dataset[self.start_num:, :]
         calibration_dataset = self.move_through_dataset(contribution_dataset, model.zero_wire_angles.copy())
         calibration_dataset[:, 0:6] /= DEG
         write_dataset(calibration_dataset, model.calibration_dataset, model.fieldnames_options["wire_samples"])
@@ -159,8 +243,10 @@ def main():
     with open("src/config/ARM95_calibration.json", 'r') as config_file:
         config = json.load(config_file)
     model = hayati_model.HayatiModel(config)
+    is_real = False
+    start_num = 19
     
-    mcx = MCX(config="ARM95.json")
+    mcx = MCX(config="ARM95.json", is_real=is_real, start_num=start_num)
     mcx.write_calibration_dataset(model)
 
 if __name__ == "__main__":
