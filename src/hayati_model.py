@@ -50,6 +50,7 @@ class HayatiModel:
         self.test_samples_number = config["test_samples_number"]
 
         self.zero_wire_angles = np.array(config["zero_wire_angles"]) * DEG
+        
         self.jac_DH_0 = None
         self.zero_offset_nominal = self.get_transition_matrix(self.zero_wire_angles, "nominal")[0:3, 3]
         self.zero_offset_real = self.get_transition_matrix(self.zero_wire_angles, "real")[0:3, 3]
@@ -128,29 +129,6 @@ class HayatiModel:
             i = 3  
         return (num, i)     # 2, alpha
     
-
-    # def param_from_letters(self, parametr: str, model_type: str):
-    #     letter, param_num = parametr.split("_")  
-    #     param_num = int(param_num) - 1
-    #     if letter == 'a':
-    #         param_letter_num = 0
-    #     elif letter == 'alpha':
-    #         param_letter_num = 1
-    #     elif letter == 'd' or letter == 'beta':
-    #         param_letter_num = 2
-    #     elif letter == 'theta':
-    #         param_letter_num = 3  
-
-    #     if model_type == 'estimated':
-    #         res = self.estimated_dh[param_num][param_letter_num] # 2, alpha
-    #     elif model_type == 'nominal':
-    #         res = self.nominal_dh[param_num][param_letter_num]
-    #     elif model_type == 'real':
-    #         res = self.real_dh[param_num][param_letter_num]
-    #     else:
-    #         res = None
-    #     return res
-
     def vary_nominal_dh(self, parametr: str, eps: float):
         (num, i) = self.params_from_letters(parametr)
         self.nominal_dh[num][i] += eps
@@ -195,6 +173,25 @@ class HayatiModel:
                 position[1] > self.cartesian_limits[1][0] and position[1] < self.cartesian_limits[1][1] and \
                 position[2] > self.cartesian_limits[2][0] and position[2] < self.cartesian_limits[2][1] and \
                 abs(z_angle) < self.max_z_angle)
+
+    def get_readable_params(self, param_type: str):
+        if param_type == 'estimated':
+            res = copy.deepcopy(self.estimated_dh)
+        elif param_type == 'nominal':
+            res = copy.deepcopy(self.nominal_dh)
+        elif param_type == 'real':
+            res = copy.deepcopy(self.real_dh)
+        else:
+            raise ValueError("type must be 'nominal', 'real' or 'estimated'")
+
+        mask = np.zeros(shape=self.nominal_dh.shape, dtype=bool)
+        mask[:, [1, 3]] = True
+        res[mask] /= DEG
+
+        mask = np.zeros(shape=self.nominal_dh.shape, dtype=bool)
+        mask[:, [0, 2]] = True
+        res[mask] *= 1000   
+        return res 
     
     # Metrics and validation routines
     def init_metrics(self):

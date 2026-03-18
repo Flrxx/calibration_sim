@@ -262,6 +262,14 @@ def measure_real_distance(model: hayati_model.HayatiModel, angles: Union[list, n
     distance *= 1 + uniform(-1, 1) * model.encoder_abs_tolerance                            # fit tolerance
     if model.encoder_resolution != 0:
         distance = round(distance / model.encoder_resolution) * model.encoder_resolution    # fit resolution
+   
+    # point_offset = model.get_transition_matrix(angles, "nominal")[0:3, 3]
+    # wire_vector = (np.array([point_offset[0] - model.zero_offset_nominal[0],
+    #                             point_offset[1] - model.zero_offset_nominal[1],
+    #                             point_offset[2] - model.zero_offset_nominal[2]])).reshape(3, 1)
+    # wire_norm = np.linalg.norm(wire_vector)
+    # print(f"nominal: {(wire_norm * 1000):.3f} real: {(distance * 1000):.3f}")
+
     return distance
 
 def measure_all_distances(model: hayati_model.HayatiModel, dataset=[]):
@@ -334,13 +342,62 @@ def vary_joints(model: hayati_model.HayatiModel, user_joint_mask: Union[list, np
             contribution = calculate_contribution(model, angles)
             add_line_csv(np.concatenate((angles / DEG, [0], contribution.flatten())).tolist(), "datasets/ARM95/wire/test.csv", model.fieldnames_options['wire_contributions'], ".3f")
 
+def get_similar_index(samples, new_sample: np.ndarray, delta):     
+    if len(samples) == 0:
+        return None
+    
+    #samples_array = np.array(samples)
+    diffs = np.abs(samples - new_sample)
+    
+    is_similar_mask = np.all(diffs <= delta, axis=1)
+    if not np.any(is_similar_mask):
+        return None
+    
+    return np.argmax(is_similar_mask)
+
+def correct_poses(model: hayati_model.HayatiModel):
+    dataset = read_dataset(model.contribution_dataset, model.fieldnames_options['wire_contributions'])
+    dataset[:, 0:6] *= DEG
+    # mask = dataset[:, 6] >= 0
+    # dataset = dataset[mask]
+    new_samples = np.zeros(shape=(dataset.shape))
+    
+    user_joint_mask = [0, 1, 2, 3, 4, 5]
+    angles = model.zero_wire_angles.copy()
+    bounds = np.array([[angles[i], angles[i]] for i in range(6)])
+    num_active = len(user_joint_mask)
+
+    if num_active > 0:
+        bounds[user_joint_mask] = model.bounds[user_joint_mask]
+
+    for i, pose in enumerate(dataset):
+        target_index = int(pose[6])
+        if target_index < 0:
+            new_samples[i, :] = pose
+            continue
+        new_pose = calculate_optimal_position(model, target_index, pose[0:6], bounds, np.max(pose[7: 7 + target_index], initial=0.0001), np.max(pose[target_index + 7 + 1:], initial=0.0001), -1, 1)
+        
+        if new_pose[0] != None:
+            delta = 15 * DEG
+            diffs = np.abs(new_pose - pose[0:6])    
+            if np.any(diffs >= delta):
+                new_pose = pose[0:6]
+        else: 
+            new_pose = pose[0:6]
+
+        new_samples[i, :6] = new_pose
+        new_samples[i, 6] = target_index
+        new_samples[i, 7:] = calculate_contribution(model, new_samples[i, :6])
+    
+    new_samples[:, :6] /= DEG
+    write_dataset(new_samples, model.contribution_dataset, model.fieldnames_options["wire_contributions"], tolerance=".3f") 
+    print("Done")
+
 def main(args):
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
     model = hayati_model.HayatiModel(config)
     model.jac_DH_0 = calculate_jac_DH_params(model, model.zero_wire_angles)
-
-    user_joint_mask_1 = np.array([4, 5])
     # i_target = 10
     # max_tries = 1000
     # prev_eps = 10
@@ -357,6 +414,8 @@ def main(args):
         #angles = np.array([14.95 * DEG, 23.83 * DEG, 139.02 * DEG, -72.84 * DEG, 90.00 * DEG, 14.95 * DEG])
         # contribution = calculate_contribution(model, angles)
         # add_line_csv(np.concatenate((angles / DEG, [0], contribution.flatten())).tolist(), "datasets/ARM95/wire/test.csv", model.fieldnames_options['wire_contributions'], ".3f")
+    elif args.mode == 'correct':
+        correct_poses(model)
     else:
         print("Wrong mode")
 
@@ -364,8 +423,8 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="ARM95_new.json")
-    parser.add_argument("-m", "--mode", help="Selected mode: 'generation' or 'check'. Default: 'generation'", default="generation")
+    parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="src/config/ARM95_calibration.json")
+    parser.add_argument("-m", "--mode", help="Selected mode: 'generation' or 'check'. Default: 'generation'", default="correct")
     parser.add_argument("-mask", "--user_joint_mask", help="", nargs='+', type=int, default=[4, 5])
     parser.add_argument("-e", "--erase_previous", help="Erase previous generation result. Default: 'false'", default="true")
     parser.add_argument("-i", "--target_index", help="Index of target. Default: 0", type=int, default=0)
