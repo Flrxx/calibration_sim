@@ -4,7 +4,7 @@ import json
 import os
 import numpy as np
 from math import sqrt, acos
-from random import uniform
+from random import uniform, random
 from math_routines import extract_zyx_euler
 import hayati_model
 from typing import Union
@@ -13,10 +13,6 @@ from csv_routines import write_dataset, add_line_csv, read_dataset
 from multiprocessing import Pool, cpu_count
 import copy
 from math_routines import DEG
-
-np.set_printoptions(precision=3, suppress=True, formatter={'all': lambda x: f'{x:0.3f}'})
-
-#ERRORS_LIST = ['theta_6', 'd_6', 'theta_5', 'theta_4', 'a_3', 'd_4', 'a_2', 'theta_3', 'theta_2', 'a_1']
 
 def calculate_jac_DH_params(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray], eps = 1e-6):
     jac_DH = np.zeros((3, len(model.error_list)))
@@ -30,12 +26,19 @@ def calculate_jac_DH_params(model: hayati_model.HayatiModel, angles: Union[list,
         pass
     return jac_DH
 
-def calculate_wire_direction(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray]):
-    #zero_offset = model.get_transition_matrix(model.zero_wire_angles, "nominal")[0:3, 3]
+def calculate_distance(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray]):
     point_offset = model.get_transition_matrix(angles, "nominal")[0:3, 3]
     wire_vector = (np.array([point_offset[0] - model.zero_offset_nominal[0],
                                 point_offset[1] - model.zero_offset_nominal[1],
                                 point_offset[2] - model.zero_offset_nominal[2]])).reshape(3, 1)
+    return wire_vector
+
+def calculate_wire_direction(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray]):
+    wire_vector = calculate_distance(model, angles)
+    # point_offset = model.get_transition_matrix(angles, "nominal")[0:3, 3]
+    # wire_vector = (np.array([point_offset[0] - model.zero_offset_nominal[0],
+    #                             point_offset[1] - model.zero_offset_nominal[1],
+    #                             point_offset[2] - model.zero_offset_nominal[2]])).reshape(3, 1)
     wire_norm = np.linalg.norm(wire_vector)
     if wire_norm == 0:
         print('Wire is not stretched')
@@ -155,12 +158,6 @@ def _generate_batch(tries_count, model: hayati_model.HayatiModel, i_target, user
     for i in range(tries_count):
         if num_active > 0:
             angles[user_joint_mask] = all_random_angles[i]
-            # while(not model.satisfies_cartesian_limits(model.get_transition_matrix(angles, "nominal"))):
-            #     angles[user_joint_mask] =  np.random.uniform(
-            #         low=active_bounds[:, 0], 
-            #         high=active_bounds[:, 1], 
-            #         size=(1, num_active)
-            #     )
         
         new_sample = calculate_optimal_position(model, i_target, angles, bounds, prev_eps, future_eps, border, border_eps)
         
@@ -238,8 +235,6 @@ def generate_single_layer(model: hayati_model.HayatiModel, i_target, user_joint_
 def get_similar_index(samples, new_sample: np.ndarray, delta):     
     if len(samples) == 0:
         return None
-    
-    #samples_array = np.array(samples)
     diffs = np.abs(samples - new_sample)
     
     is_similar_mask = np.all(diffs <= delta, axis=1)
@@ -393,18 +388,29 @@ def correct_poses(model: hayati_model.HayatiModel):
     write_dataset(new_samples, model.contribution_dataset, model.fieldnames_options["wire_contributions"], tolerance=".3f") 
     print("Done")
 
+def get_dataset_for_validation(model: hayati_model.HayatiModel, tries_num: int, angle_limit, wire_limits):
+    i = 0
+    printable_res = np.zeros(shape=(tries_num, 9))
+    while i < tries_num:
+        random_angles = np.array([model.joint_limits_general_l[axis] + random() * (model.joint_limits_general_h[axis] - model.joint_limits_general_l[axis]) for axis in range(6)], dtype='float')
+        angles = model.satisfies_wire_limits(random_angles, angle_limit, wire_limits)
+        if angles[0] == None:
+            continue
+        random_point = model.get_transition_matrix(angles, "nominal")
+        if model.satisfies_cartesian_limits(random_point):
+            distance_theoretical = np.linalg.norm(calculate_distance(model, angles))
+            printable_res[i] = np.concatenate([angles, [distance_theoretical, -1, 0]])
+            i += 1
+            print(i)
+    write_dataset(printable_res, model., model.fieldnames_options["test_result"], tolerance=".3f")
+    print("Done")
+
 def main(args):
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
     model = hayati_model.HayatiModel(config)
     model.jac_DH_0 = calculate_jac_DH_params(model, model.zero_wire_angles)
-    # i_target = 10
-    # max_tries = 1000
-    # prev_eps = 10
-    # future_eps = 0.0004 
-    # angle_diff = 20   
 
-    # angle_limit = 85
     if args.mode == 'generation':
         generate_samples(model, args.target_index, np.array(args.user_joint_mask), args.tries_count, 
                             args.prev_eps, args.future_eps, args.angle_diff, args.erase_previous, args.border, args.border_eps) 
@@ -416,6 +422,8 @@ def main(args):
         # add_line_csv(np.concatenate((angles / DEG, [0], contribution.flatten())).tolist(), "datasets/ARM95/wire/test.csv", model.fieldnames_options['wire_contributions'], ".3f")
     elif args.mode == 'correct':
         correct_poses(model)
+    elif args.mode == 'validation':
+        get_dataset_for_validation(model, args.tries_count, 45 * DEG, [100, 10000])
     else:
         print("Wrong mode")
 
@@ -424,11 +432,11 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="src/config/ARM95_calibration.json")
-    parser.add_argument("-m", "--mode", help="Selected mode: 'generation' or 'check'. Default: 'generation'", default="correct")
+    parser.add_argument("-m", "--mode", help="Selected mode: 'generation' or 'check'. Default: 'generation'", default="validation")
     parser.add_argument("-mask", "--user_joint_mask", help="", nargs='+', type=int, default=[4, 5])
     parser.add_argument("-e", "--erase_previous", help="Erase previous generation result. Default: 'false'", default="true")
     parser.add_argument("-i", "--target_index", help="Index of target. Default: 0", type=int, default=0)
-    parser.add_argument("-t", "--tries_count", help="Number of tries. Default: 10", type=int, default=100)
+    parser.add_argument("-n", "--tries_count", help="Number of tries. Default: 10", type=int, default=30)
     parser.add_argument("-a", "--angle_diff", help="Angle difference between poses. Default: 5", type=float, default=5)
     parser.add_argument("-p", "--prev_eps", help="Epsilon for previous params. Default: 0.005", type=float, default=0.01)
     parser.add_argument("-f", "--future_eps", help="Epsilon for future params. Default: 0.0004", type=float, default=0.001)
@@ -437,4 +445,3 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     main(args)
-        

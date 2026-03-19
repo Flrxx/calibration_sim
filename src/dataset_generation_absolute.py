@@ -70,7 +70,7 @@ def generate_dataset(model: hayati_model.HayatiModel):
 #     model.nominal_base_params = backup_base
 #     return dataset
 
-def generate_random_dataset(model, disable_limits=False):
+def generate_random_dataset(model, disable_limits=True):
     dataset = np.zeros((model.test_samples_number, len(FIELDNAMES_OPTIONS["random_poses"])))
     for i in range(model.test_samples_number):
         dataset[i] = make_random_sample(model, disable_limits)

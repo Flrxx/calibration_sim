@@ -138,7 +138,7 @@ class MCX:
                 elif prev_pose[-1] == -2:
                     self.execute_moveL(prev_pose[:6])
             previous_poses.clear()
-        #time.sleep(3)
+        time.sleep(2)
         self.null_value = self.get_wire_distance(0)
         if self.null_value != -1:
             print(f"Null value: {self.null_value}")
@@ -188,7 +188,11 @@ class MCX:
                 print(f"Started pose {i + 2 + self.start_num}")     
                 self.execute_moveJ(pose[:6])
                 print(f"Done pose {i + 2 + self.start_num}")
-                input()
+                #input()
+                time.sleep(2)
+                tcp_coords_nom = self.robot_PoseTransformer.calcJointToCartPose(pose[:6]).jointtocartlist[0].cartpose.coordinates[0:3]
+                distance_theor = sqrt((tcp_coords_nom[0] - zero_point[0])**2 + (tcp_coords_nom[1] - zero_point[1])**2 + (tcp_coords_nom[2] - zero_point[2])**2)
+                print(f"Theoretical distance: {(distance_theor * 1000):.2f} mm")
                 wire_len = self.get_wire_distance(self.null_value)
                 if wire_len > 0:
                     print(f"Wire lenght: {wire_len}")
@@ -214,9 +218,8 @@ class MCX:
                 last_index = pose[6]   
                 self.execute_moveJ(pose[:6])
                 print(f"Done pose {i + 2 + self.start_num}")
-                input()
-                #time.sleep(1)
-                #time.sleep(3)
+                #input()
+                time.sleep(2)
                 wire_len = self.get_wire_distance(self.null_value)
                 if wire_len > 0:
                     print(f"Wire lenght: {wire_len}")
@@ -242,9 +245,9 @@ def main():
     with open("src/config/ARM95_calibration.json", 'r') as config_file:
         config = json.load(config_file)
     model = hayati_model.HayatiModel(config)
-    is_real = True
-    start_num = 2
-
+    
+    is_real = False
+    start_num = 64
     mcx = MCX(config="ARM95.json", is_real=is_real, start_num=start_num)
     mcx.write_calibration_dataset(model)
 

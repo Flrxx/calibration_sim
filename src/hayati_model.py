@@ -7,6 +7,9 @@ from robotic_transformations import dh_trans, hayati_trans
 import multiprocessing as mp
 import copy
 from math_routines import DEG
+from scipy.optimize import minimize
+
+np.set_printoptions(precision=3, suppress=True, formatter={'all': lambda x: f'{x:0.3f}'})
 
 class HayatiModel:
     def __init__(self, config):
@@ -25,33 +28,22 @@ class HayatiModel:
         self.estimated_dh = copy.deepcopy(self.nominal_dh)
         self.estimated_base_params = copy.deepcopy(self.nominal_base_params)
         self.estimated_tool_params = copy.deepcopy(self.nominal_tool_params)
-
-        # self.estimated_dh = self.nominal_dh.copy()
-        # self.estimated_base_params = self.nominal_base_params.copy()
-        # self.estimated_tool_params = self.nominal_tool_params.copy()
         
         self.real_dh = np.array(config['real_dh'])
         self.real_base_params = config['real_base_params']
         self.real_tool_params = config['real_tool_params']
-
-        self.angle_dist = self.linear_dist = self.base_dist = self.tool_dist = 0
         
         self.joint_limits_general_h = config["joint_limits_general_h"]
         self.joint_limits_general_l = config["joint_limits_general_l"]
         self.bounds = np.array([(self.joint_limits_general_l[i], self.joint_limits_general_h[i]) for i in range(6)])
-
-
-        self.joint_limits_circle_h = config["joint_limits_circle_h"]
-        self.joint_limits_circle_l = config["joint_limits_circle_l"]
 
         self.cartesian_limits = config["cartesian_limits"]
         self.max_z_angle = config["max_z_angle"]
         
         self.test_samples_number = config["test_samples_number"]
 
-        self.zero_wire_angles = np.array(config["zero_wire_angles"]) * DEG
-        
         self.jac_DH_0 = None
+        self.zero_wire_angles = np.array(config["zero_wire_angles"]) * DEG
         self.zero_offset_nominal = self.get_transition_matrix(self.zero_wire_angles, "nominal")[0:3, 3]
         self.zero_offset_real = self.get_transition_matrix(self.zero_wire_angles, "real")[0:3, 3]
         
@@ -65,14 +57,15 @@ class HayatiModel:
         self.encoder_abs_tolerance = config["encoder_abs_tolerance_percent"] / 100
         self.encoder_resolution = config["encoder_resolution_mm"] / 1000
         self.error_list = config["error_list"]
-        #self.angles_mask = np.array([1 if any(sub in e for sub in ["", "", ""]) else 0 for e in self.error_list])
+        
         self.angle_idexes = [i for i, e in enumerate(self.error_list) if any(sub in e for sub in ("alpha", "theta", "beta"))]
         self.fieldnames_options = {
             "wire_contributions" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'index', *self.error_list],
             "wire_samples": ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'index', 'd'],
             "random_poses" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6'],
-            "test_result": ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'delta']
+            "test_result": ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'd_encoder']
         }
+
         self.wire_limits = [config["wire_limits_l_mm"] / 1000, config["wire_limits_h_mm"] / 1000]
         self.angle_limit = config["angle_limit_deg"] * DEG
 
@@ -173,6 +166,44 @@ class HayatiModel:
                 position[1] > self.cartesian_limits[1][0] and position[1] < self.cartesian_limits[1][1] and \
                 position[2] > self.cartesian_limits[2][0] and position[2] < self.cartesian_limits[2][1] and \
                 abs(z_angle) < self.max_z_angle)
+    
+    def satisfies_wire_limits(self, angles_in, angle_limit: float, wire_limits: Union[np.ndarray, list]):
+        def objective(angles):
+            return 0  #- max(np.concatenate([output[0:i_target], output[i_target + 1: border]]))**2
+        cons = []
+
+        def wire_cons(angles):    
+            # z limits
+            matrix = self.get_transition_matrix(angles, "nominal")
+            z_dir = matrix[0:3, 2]
+            scalar_z = np.vdot(z_dir, -self.zero_wire_direction)
+            alpha_z = acos(scalar_z)
+            angle_cons_z = np.array([alpha_z, angle_limit - alpha_z]) # so angle would fit
+
+            wire = matrix[0:3, 3] - self.zero_offset_nominal
+            wire_len = np.linalg.norm(wire) 
+            scalar_wire = np.vdot(-(wire / wire_len), z_dir)
+            alpha_wire = acos(scalar_wire)
+            angle_cons_wire = np.array([alpha_wire, angle_limit - alpha_wire]) # so angle would fit
+            
+            # wire limits        
+            len_cons = np.array([wire_len - wire_limits[0], wire_limits[1] - wire_len]) # so wire len would fit
+
+            scalar = np.vdot(wire / wire_len, self.zero_wire_direction)  # > 0 so wire stretch forward        
+            alpha = acos(scalar)
+            angle_cons = np.array([alpha, angle_limit - alpha]) # so angle would fit
+
+            return np.concatenate(([scalar_z], [scalar_wire], angle_cons_z, angle_cons_wire, [scalar], angle_cons, len_cons))
+
+        #cons.append({'type': 'ineq', 'fun': wire_cons})
+
+        res = minimize(objective, angles_in, method='SLSQP', 
+            constraints=cons, tol=1e-3)
+        #return res.x
+        if res.success:
+            return(res.x)
+        else:
+            return([None for _ in range(6)])
 
     def get_readable_params(self, param_type: str):
         if param_type == 'estimated':

@@ -9,7 +9,7 @@ import hayati_model
 from math_routines import extract_zyx_euler
 from random import uniform
 from dataset_generation_absolute import generate_real_dh
-from dataset_generation_wire import make_calibration_dataset, measure_all_distances
+from dataset_generation_wire import measure_all_distances, calculate_distance
 from csv_routines import read_dataset, write_dataset
 from multiprocessing import Pool, cpu_count
 import copy
@@ -58,7 +58,6 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[]):
         else:
             model.estimated_dh[param_num][param_letter_num] = final_value 
             
-    
     if not is_real:
         return [param_num, param_letter_num], param_errors 
     else:
@@ -148,9 +147,10 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
             new_dh = generate_real_dh(copy_model)
             copy_model.change_real_dh(new_dh)
         dataset = measure_all_distances(copy_model)
+
         last_indexes, param_errors_new = execute_calibration(copy_model, dataset=dataset)
         local_param_errors += param_errors_new
-        #param_errors += execute_calibration_group(copy_model, [[0, 6]], dataset=dataset)
+
         new_nom, new_est, new_esp_prev = check_results(copy_model, last_indexes)
         local_nominal_error += new_nom
         local_estimated_error += new_est
@@ -168,7 +168,7 @@ def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: i
     chunk_size = max(1, (tries_num // num_cores))
 
     tasks = []
-    for i in range(min(num_cores, tries_num)):
+    for _ in range(min(num_cores, tries_num)):
         current_tries = chunk_size
         if current_tries > 0:
             tasks.append((model, chunk_size, genarate))        
@@ -187,7 +187,6 @@ def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: i
     params_error_median = np.sum(params_error, axis=0)/len(params_error)
 
     print(f"Nominal error: {nominal_error_median:.6f}\nAfter calibration: {estimated_error_median:.6f}\n\nDifference: {(nominal_error_median - estimated_error_median):.6f}")
-
     print(f"Previous difference: {(nominal_error_median - estimated_error_prev_median):.6f}\n\nContribution of new: {(estimated_error_prev_median - estimated_error_median):.6f}")
     print(params_error_median)
     #return nominal_error_median, estimated_error_median, estimated_error_prev_median, params_error_median
