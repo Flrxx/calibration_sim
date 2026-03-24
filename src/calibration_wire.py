@@ -118,21 +118,25 @@ def check_results(model: hayati_model.HayatiModel, last_indexes: list):
     nominal_dist = np.linalg.norm(nominal_diff, axis=1).reshape(len(poses), 1)
     estimated_dist = np.linalg.norm(estimated_diff, axis=1).reshape(len(poses), 1)
     estimated_dist_prev = np.linalg.norm(estimated_diff_prev, axis=1).reshape(len(poses), 1)
-    #delta = nominal_dist - estimated_dist
+    
 
     # nom_params_errors = model.real_dh - model.nominal_dh
     # est_params_errors = model.real_dh - model.estimated_dh
 
     #params_errors = (nom_params_errors - est_params_errors)
 
-    #printable_res = np.concatenate((poses/DEG, nominal_dist, estimated_dist, delta), axis=1)
-    #avg_error = np.sum(delta) / len(delta)
+    
     avg_nom_error = np.sum(nominal_dist)/len(nominal_dist)
     avg_est_error = np.sum(estimated_dist) / len (estimated_dist)
     avg_est_error_prev = np.sum(estimated_dist_prev) / len (estimated_dist_prev)
-    #median = np.array([0, 0, 0, 0, 0, 0, avg_nom_error, avg_est_error, avg_error]).reshape(1, 9)
-    #printable_res = np.append(printable_res, median, axis=0)
-    #write_dataset(printable_res, model.results_file, model.fieldnames_options["test_result"], tolerance=".3f")
+    
+    # delta = nominal_dist - estimated_dist
+    # printable_res = np.concatenate((poses/DEG, nominal_dist, estimated_dist, delta), axis=1)
+    # avg_error = np.sum(delta) / len(delta)
+    # median = np.array([0, 0, 0, 0, 0, 0, avg_nom_error, avg_est_error, avg_error]).reshape(1, 9)
+    # printable_res = np.append(printable_res, median, axis=0)
+    # write_dataset(printable_res, "results/ARM95/test_result.csv", ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'delta'],
+    #                  tolerance=".3f")
     return avg_nom_error, avg_est_error, avg_est_error_prev
 
 def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
@@ -212,6 +216,29 @@ def write_results(model: hayati_model.HayatiModel):
     print()
     print(est_params[:, :4])
 
+def validate_wire(model: hayati_model.HayatiModel):
+    validation_dataset = read_dataset("results/ARM95/validation_results.csv", model.fieldnames_options["test_result"])
+    validation_dataset[:, :6] *= DEG
+    validation_dataset[:, 6:] /= 1000
+
+    res = np.zeros(shape=(validation_dataset.shape)) 
+    for i, line in enumerate(validation_dataset[:-1]):
+        distance_theoretical = np.linalg.norm(calculate_distance(model, line[0:6], "nominal"))
+        distance_estimated = np.linalg.norm(calculate_distance(model, line[0:6], "estimated"))
+        
+        res[i] = np.concatenate([line[0:6], [distance_theoretical, distance_estimated, 
+                                             line[8], (abs(line[8] - distance_theoretical) - abs(line[8] - distance_estimated))]])
+    res[-1, 6:] = np.array([np.median(res[:, 6]), np.median(res[:, 7]), np.median(res[:, 8]), np.median(res[:, 9])])
+    return res
+
+def write_validation_dataset(model: hayati_model.HayatiModel):
+    validation_dataset = validate_wire(model)
+    
+    validation_dataset[:, :6] /= DEG
+    validation_dataset[:, 6:] *= 1000
+    write_dataset(validation_dataset, "results/ARM95/validation_results.csv", model.fieldnames_options["test_result"], tolerance = ".3f")
+    print("Done")
+
 def main(args):
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
@@ -221,11 +248,12 @@ def main(args):
     else:
         execute_calibration(model)
         write_results(model)
+        write_validation_dataset(model)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: src/config/ARM95_calibration.json", default="src/config/ARM95_calibration.json")
-    parser.add_argument("-g", "--generate", help="Generate new real DH. Default: 'true'", default="false")
+    parser.add_argument("-g", "--generate", help="Generate new real DH. Default: 'true'", default="true")
     parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=10)
     args = parser.parse_args()
     main(args)

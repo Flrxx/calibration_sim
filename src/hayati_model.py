@@ -63,7 +63,7 @@ class HayatiModel:
             "wire_contributions" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'index', *self.error_list],
             "wire_samples": ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'index', 'd'],
             "random_poses" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6'],
-            "test_result": ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'd_encoder']
+            "test_result": ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'd_encoder', 'diff']
         }
 
         self.wire_limits = [config["wire_limits_l_mm"] / 1000, config["wire_limits_h_mm"] / 1000]
@@ -71,6 +71,13 @@ class HayatiModel:
 
         self.distance_delta = config["distance_delta_mm"] / 1000
         self.angle_delta = config["angle_delta_deg"] * DEG
+        
+        self.a_delta = config["a_delta_mm"] / 1000
+        self.alpha_delta = config["alpha_delta_deg"] * DEG
+        self.d_delta = config["d_delta_mm"] / 1000
+        self.theta_delta = config["theta_delta_deg"] * DEG
+        self.beta_delta = config["beta_delta_deg"] * DEG
+
         self.ignore_error_list = config["ignore_errors_list"]
     
     def get_transforms(self, angles: Union[np.ndarray, list], params: list) -> list:
@@ -167,13 +174,15 @@ class HayatiModel:
                 position[2] > self.cartesian_limits[2][0] and position[2] < self.cartesian_limits[2][1] and \
                 abs(z_angle) < self.max_z_angle)
     
-    def satisfies_wire_limits(self, angles_in, angle_limit: float, wire_limits: Union[np.ndarray, list]):
+    def satisfies_wire_limits(self, angles_in, bounds: Union[np.ndarray, list], angle_limit: float, wire_limits: Union[np.ndarray, list]):
+        
         def objective(angles):
             return 0  #- max(np.concatenate([output[0:i_target], output[i_target + 1: border]]))**2
         cons = []
 
         def wire_cons(angles):    
             # z limits
+
             matrix = self.get_transition_matrix(angles, "nominal")
             z_dir = matrix[0:3, 2]
             scalar_z = np.vdot(z_dir, -self.zero_wire_direction)
@@ -195,10 +204,10 @@ class HayatiModel:
 
             return np.concatenate(([scalar_z], [scalar_wire], angle_cons_z, angle_cons_wire, [scalar], angle_cons, len_cons))
 
-        #cons.append({'type': 'ineq', 'fun': wire_cons})
+        cons.append({'type': 'ineq', 'fun': wire_cons})
 
         res = minimize(objective, angles_in, method='SLSQP', 
-            constraints=cons, tol=1e-3)
+            bounds=bounds, constraints=cons, tol=1e-3)
         #return res.x
         if res.success:
             return(res.x)

@@ -5,7 +5,10 @@ import json
 import time
 import copy
 import serial
+import argparse
 
+
+from dataset_generation_wire import calculate_distance
 from csv_routines import read_dataset, write_dataset, add_line_csv
 from robot_control.motion_program import Waypoint, MotionProgram, PoseTransformer
 from robot_control.system_defs import InterpreterStates, States, ModeCommands, StateEvents, Modes, InterpreterEvents, MotionGeneratorStates
@@ -240,16 +243,83 @@ class MCX:
         calibration_dataset[:, 0:6] /= DEG
         write_dataset(calibration_dataset, model.calibration_dataset, model.fieldnames_options["wire_samples"])
         print("Done")
+
+    def move_through_validation_dataset(self, dataset_poses: np.ndarray, zero_pose: np.ndarray, model):
+        with open(model.results_file, 'r') as config_file:
+            config = json.load(config_file)
+        model.estimated_dh = copy.deepcopy(config["estimated_dh"])
+        
+        zero_point = self.robot_PoseTransformer.calcJointToCartPose(zero_pose).jointtocartlist[0].cartpose.coordinates
+
+        result = np.zeros(shape=(len(dataset_poses), len(model.fieldnames_options["test_result"])))
+        #dataset_poses = dataset_poses[:, :6]
+        
+        self.execute_moveJ(zero_pose)
+        self.null_value = self.get_wire_distance(0)
+        for i, pose in enumerate(dataset_poses): 
+            print(f"Started pose {i + 2 + self.start_num}")     
+            tcp_coords_nom = self.robot_PoseTransformer.calcJointToCartPose(pose[:6]).jointtocartlist[0].cartpose.coordinates[0:3]
+            distance_theor = sqrt((tcp_coords_nom[0] - zero_point[0])**2 + (tcp_coords_nom[1] - zero_point[1])**2 + (tcp_coords_nom[2] - zero_point[2])**2)
+            
+            vertical_offset_point =  copy.deepcopy(zero_point)
+            vertical_offset_point[2] += distance_theor
+            print(f"Theoretical distance: {(distance_theor * 1000):.2f} mm")
+        
+            self.execute_moveL(vertical_offset_point)
+            #time.sleep(1)
+            vertical_offset_pose = self.joint_subscription.read()[0].value
+            
+            self.execute_moveJ(pose[:6])
+            print(f"Done pose {i + 2 + self.start_num}")
+            #input()
+            time.sleep(2)
+            wire_len = self.get_wire_distance(self.null_value)
+            if wire_len > 0:
+                print(f"Wire lenght: {wire_len}")
+
+            result[i, 0:6] = self.joint_subscription.read()[0].value
+            result[i, 6] = np.linalg.norm(calculate_distance(model, result[i, 0:6], "nominal"))
+            result[i, 7] = np.linalg.norm(calculate_distance(model, result[i, 0:6], "estimated"))
+            result[i, 8] = wire_len / 1000
+            result[i, 9] = abs(wire_len - result[i, 6]) - abs(wire_len - result[i, 7])
+            add_line_csv((result[i]), "datasets/ARM95/wire/test.csv", model.fieldnames_options["test_result"])
+            
+            self.execute_moveJ(vertical_offset_pose)
+            
+            self.move_to_start([], zero_point)
+        return result
+
+    def write_validation_dataset(self, model: hayati_model.HayatiModel):              
+        validation_dataset = read_dataset("datasets/ARM95/validation_dataset.csv", model.fieldnames_options["test_result"])
+        validation_dataset[:, :6] *= DEG
+        validation_dataset[:, 6:] /= 1000
+        validation_dataset = validation_dataset[self.start_num:, :]
+        validation_dataset = self.move_through_validation_dataset(validation_dataset, model.zero_wire_angles.copy(), model)
+        
+        validation_dataset[:, :6] /= DEG
+        validation_dataset[:, 6:] *= 1000
+        write_dataset(validation_dataset, "results/ARM95/validation_results.csv", model.fieldnames_options["test_result"])
+        print("Done")
     
-def main():
+def main(args):
     with open("src/config/ARM95_calibration.json", 'r') as config_file:
         config = json.load(config_file)
     model = hayati_model.HayatiModel(config)
     
-    is_real = False
-    start_num = 64
-    mcx = MCX(config="ARM95.json", is_real=is_real, start_num=start_num)
-    mcx.write_calibration_dataset(model)
+    # is_real = False
+    # start_num = 64
+    mcx = MCX(config="ARM95.json", is_real=args.is_real, start_num=args.start_num)
+    if args.mode == "calibration":
+        mcx.write_calibration_dataset(model)
+    elif args.mode == "validation":
+        mcx.write_validation_dataset(model)
+    else: 
+        print("Wrong mode")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-m", "--mode", help="calibration or validation", default="calibration")
+    parser.add_argument("-s", "--start_num", help="Choose model to be visualized. Default: nominal", type=int, default=2)
+    parser.add_argument("--is_real", action='store_true')
+    args = parser.parse_args()
+    main(args)

@@ -274,6 +274,8 @@ def main(args):
     elif args.visualization_type == "dataset":
         if ("calibration" in args.dataset):
             dataset = read_dataset(args.dataset, model.fieldnames_options["wire_samples"])
+        elif("validation" in args.dataset):
+            dataset = read_dataset(args.dataset, model.fieldnames_options["test_result"])
         else:
             dataset = read_dataset(args.dataset, model.fieldnames_options["wire_contributions"])
         visualize_dataset(model, dataset, args.model_type)

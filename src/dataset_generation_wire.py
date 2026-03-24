@@ -26,15 +26,18 @@ def calculate_jac_DH_params(model: hayati_model.HayatiModel, angles: Union[list,
         pass
     return jac_DH
 
-def calculate_distance(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray]):
-    point_offset = model.get_transition_matrix(angles, "nominal")[0:3, 3]
+def calculate_distance(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray], type: str):
+    if type not in ["estimated", "nominal"]:
+        print("Wrong type")
+        return(None)
+    point_offset = model.get_transition_matrix(angles, type)[0:3, 3]
     wire_vector = (np.array([point_offset[0] - model.zero_offset_nominal[0],
                                 point_offset[1] - model.zero_offset_nominal[1],
                                 point_offset[2] - model.zero_offset_nominal[2]])).reshape(3, 1)
     return wire_vector
 
 def calculate_wire_direction(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray]):
-    wire_vector = calculate_distance(model, angles)
+    wire_vector = calculate_distance(model, angles, "nominal")
     # point_offset = model.get_transition_matrix(angles, "nominal")[0:3, 3]
     # wire_vector = (np.array([point_offset[0] - model.zero_offset_nominal[0],
     #                             point_offset[1] - model.zero_offset_nominal[1],
@@ -337,19 +340,6 @@ def vary_joints(model: hayati_model.HayatiModel, user_joint_mask: Union[list, np
             contribution = calculate_contribution(model, angles)
             add_line_csv(np.concatenate((angles / DEG, [0], contribution.flatten())).tolist(), "datasets/ARM95/wire/test.csv", model.fieldnames_options['wire_contributions'], ".3f")
 
-def get_similar_index(samples, new_sample: np.ndarray, delta):     
-    if len(samples) == 0:
-        return None
-    
-    #samples_array = np.array(samples)
-    diffs = np.abs(samples - new_sample)
-    
-    is_similar_mask = np.all(diffs <= delta, axis=1)
-    if not np.any(is_similar_mask):
-        return None
-    
-    return np.argmax(is_similar_mask)
-
 def correct_poses(model: hayati_model.HayatiModel):
     dataset = read_dataset(model.contribution_dataset, model.fieldnames_options['wire_contributions'])
     dataset[:, 0:6] *= DEG
@@ -388,22 +378,38 @@ def correct_poses(model: hayati_model.HayatiModel):
     write_dataset(new_samples, model.contribution_dataset, model.fieldnames_options["wire_contributions"], tolerance=".3f") 
     print("Done")
 
-def get_dataset_for_validation(model: hayati_model.HayatiModel, tries_num: int, angle_limit, wire_limits):
+def get_dataset_for_validation(model: hayati_model.HayatiModel, tries_num: int, angle_limit, wire_limits, angle_diff):
+    with open(model.results_file, 'r') as config_file:
+        config = json.load(config_file)
+    model.estimated_dh = copy.deepcopy(config["estimated_dh"])
     i = 0
-    printable_res = np.zeros(shape=(tries_num, 9))
+    printable_res = np.zeros(shape=(tries_num, len(model.fieldnames_options["test_result"])))
+    bounds = copy.deepcopy(model.bounds)
+    bounds[0, :] = np.array([-45 * DEG, 45 * DEG])
+    bounds[1, :] = np.array([-40 * DEG, 40 * DEG])
+    bounds[4, :] = np.array([60 * DEG, 120 * DEG])
+
     while i < tries_num:
         random_angles = np.array([model.joint_limits_general_l[axis] + random() * (model.joint_limits_general_h[axis] - model.joint_limits_general_l[axis]) for axis in range(6)], dtype='float')
-        angles = model.satisfies_wire_limits(random_angles, angle_limit, wire_limits)
+        angles = model.satisfies_wire_limits(random_angles, bounds, angle_limit, wire_limits)
         if angles[0] == None:
             continue
+
+        similar_index = get_similar_index(printable_res[:, :6], angles, angle_diff * DEG)
+        if similar_index is not None:
+            continue
+
         random_point = model.get_transition_matrix(angles, "nominal")
         if model.satisfies_cartesian_limits(random_point):
-            distance_theoretical = np.linalg.norm(calculate_distance(model, angles))
-            printable_res[i] = np.concatenate([angles, [distance_theoretical, -1, 0]])
+            distance_theoretical = np.linalg.norm(calculate_distance(model, angles, "nominal"))
+            distance_estimated = np.linalg.norm(calculate_distance(model, angles, "estimated"))
+            printable_res[i] = np.concatenate([angles, [distance_theoretical, distance_estimated, -1, -1]])
             i += 1
-            print(i)
-    write_dataset(printable_res, model., model.fieldnames_options["test_result"], tolerance=".3f")
-    print("Done")
+    printable_res[:, :6] /= DEG
+    printable_res[:, 6:] *= 1000
+    write_dataset(printable_res, "datasets/ARM95/validation_dataset.csv", model.fieldnames_options["test_result"], tolerance=".3f")
+
+#def auto_collect_layer
 
 def main(args):
     with open(args.config, 'r') as config_file:
@@ -423,7 +429,7 @@ def main(args):
     elif args.mode == 'correct':
         correct_poses(model)
     elif args.mode == 'validation':
-        get_dataset_for_validation(model, args.tries_count, 45 * DEG, [100, 10000])
+        get_dataset_for_validation(model, args.tries_count, 15 * DEG, [100 / 1000, 600 / 1000], 15*DEG)
     else:
         print("Wrong mode")
 
@@ -433,7 +439,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="src/config/ARM95_calibration.json")
     parser.add_argument("-m", "--mode", help="Selected mode: 'generation' or 'check'. Default: 'generation'", default="validation")
-    parser.add_argument("-mask", "--user_joint_mask", help="", nargs='+', type=int, default=[4, 5])
+    parser.add_argument("-mask", "--user_joint_mask", help="", nargs='+', type=int, default=[0, 1, 2, 3, 4, 5])
     parser.add_argument("-e", "--erase_previous", help="Erase previous generation result. Default: 'false'", default="true")
     parser.add_argument("-i", "--target_index", help="Index of target. Default: 0", type=int, default=0)
     parser.add_argument("-n", "--tries_count", help="Number of tries. Default: 10", type=int, default=30)

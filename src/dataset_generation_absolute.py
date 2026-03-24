@@ -27,16 +27,15 @@ def generate_real_dh(model:hayati_model.HayatiModel):
         mask[index_row[0], index_row[1]] = 0
 
     for i in range(6):
-
         if(model.nominal_dh[i][-1] == 0):
-            d_or_beta = model.distance_delta
+            d_or_beta = model.d_delta
         else:
-            d_or_beta = model.angle_delta
+            d_or_beta = model.beta_delta
         
-        new_dh[i][0] += model.distance_delta * uniform(-1, 1) * mask[i, 0]
-        new_dh[i][1] += model.angle_delta * uniform(-1, 1) * mask[i, 1]
+        new_dh[i][0] += model.a_delta * uniform(-1, 1) * mask[i, 0]
+        new_dh[i][1] += model.alpha_delta * uniform(-1, 1) * mask[i, 1]
         new_dh[i][2] += d_or_beta * uniform(-1, 1) * mask[i, 2]
-        new_dh[i][3] += model.angle_delta * uniform(-1, 1) * mask[i, 3]
+        new_dh[i][3] += model.theta_delta * uniform(-1, 1) * mask[i, 3]
 
         # print("[")
         # print(f"    {new_dh[i][0]:0.6f}, {new_dh[i][1]:0.6f}, {new_dh[i][2]:0.6f}, {new_dh[i][3]:0.6f}, {model.nominal_dh[i][-1]}")
