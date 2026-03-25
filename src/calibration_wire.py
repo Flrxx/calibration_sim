@@ -27,10 +27,10 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[]):
     param_errors = np.zeros(len(model.error_list))
     for i in range (len(model.error_list)):
         single_param_dataset = dataset[dataset[:, 6] == i]
-        param_num, param_letter_num = model.params_from_letters(model.error_list[i])
-        
         if(len(single_param_dataset) == 0):
             continue
+        param_num, param_letter_num = model.params_from_letters(model.error_list[i])        
+
         optimizing_param = calibrate_single_param(model, single_param_dataset)        
         
         
@@ -125,7 +125,6 @@ def check_results(model: hayati_model.HayatiModel, last_indexes: list):
 
     #params_errors = (nom_params_errors - est_params_errors)
 
-    
     avg_nom_error = np.sum(nominal_dist)/len(nominal_dist)
     avg_est_error = np.sum(estimated_dist) / len (estimated_dist)
     avg_est_error_prev = np.sum(estimated_dist_prev) / len (estimated_dist_prev)
@@ -254,6 +253,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: src/config/ARM95_calibration.json", default="src/config/ARM95_calibration.json")
     parser.add_argument("-g", "--generate", help="Generate new real DH. Default: 'true'", default="true")
-    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=10)
+    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=1)
     args = parser.parse_args()
     main(args)
