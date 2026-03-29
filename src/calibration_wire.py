@@ -24,7 +24,7 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[]):
         dataset = dataset[mask]
         dataset[:, 0:6] *= DEG
         dataset[:, 7] /= 1000
-    param_errors = np.zeros(len(model.error_list))
+    #param_errors = np.zeros(len(model.error_list))
     for i in range (len(model.error_list)):
         single_param_dataset = dataset[dataset[:, 6] == i]
         if(len(single_param_dataset) == 0):
@@ -51,15 +51,15 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[]):
                 start_error_rel = 100
                 final_error_rel = 100
             model.estimated_dh[param_num][param_letter_num] = final_value 
-            if start_error_rel != 0:
-                param_errors[i] = (abs(start_error_rel) - abs(final_error_rel)) / abs(start_error_rel) * 100 #%
-            else:
-                param_errors[i] = 100 #%
+            # if start_error_rel != 0:
+            #     param_errors[i] = (abs(start_error_rel) - abs(final_error_rel)) / abs(start_error_rel) * 100 #%
+            # else:
+            #     param_errors[i] = 100
         else:
             model.estimated_dh[param_num][param_letter_num] = final_value 
             
     if not is_real:
-        return [param_num, param_letter_num], param_errors 
+        return [param_num, param_letter_num]#, param_errors 
     else:
         return True
 
@@ -129,13 +129,13 @@ def check_results(model: hayati_model.HayatiModel, last_indexes: list):
     avg_est_error = np.sum(estimated_dist) / len (estimated_dist)
     avg_est_error_prev = np.sum(estimated_dist_prev) / len (estimated_dist_prev)
     
-    # delta = nominal_dist - estimated_dist
-    # printable_res = np.concatenate((poses/DEG, nominal_dist, estimated_dist, delta), axis=1)
-    # avg_error = np.sum(delta) / len(delta)
-    # median = np.array([0, 0, 0, 0, 0, 0, avg_nom_error, avg_est_error, avg_error]).reshape(1, 9)
-    # printable_res = np.append(printable_res, median, axis=0)
-    # write_dataset(printable_res, "results/ARM95/test_result.csv", ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'delta'],
-    #                  tolerance=".3f")
+    delta = nominal_dist - estimated_dist
+    printable_res = np.concatenate((poses/DEG, nominal_dist, estimated_dist, delta), axis=1)
+    avg_error = np.sum(delta) / len(delta)
+    median = np.array([0, 0, 0, 0, 0, 0, avg_nom_error, avg_est_error, avg_error]).reshape(1, 9)
+    printable_res = np.append(printable_res, median, axis=0)
+    write_dataset(printable_res, "results/ARM95/test_result.csv", ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'delta'],
+                     tolerance=".3f")
     return avg_nom_error, avg_est_error, avg_est_error_prev
 
 def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
@@ -151,8 +151,8 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
             copy_model.change_real_dh(new_dh)
         dataset = measure_all_distances(copy_model)
 
-        last_indexes, param_errors_new = execute_calibration(copy_model, dataset=dataset)
-        local_param_errors += param_errors_new
+        last_indexes = execute_calibration(copy_model, dataset=dataset) #, param_errors_new 
+        #local_param_errors += param_errors_new
 
         new_nom, new_est, new_esp_prev = check_results(copy_model, last_indexes)
         local_nominal_error += new_nom
@@ -160,11 +160,11 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
         local_estimated_error_prev += new_esp_prev
         copy_model.reset_estimated_dh()
     
-    local_param_errors /= tries_count
+    #local_param_errors /= tries_count
     local_nominal_error /= tries_count
     local_estimated_error /= tries_count
     local_estimated_error_prev /= tries_count
-    return local_nominal_error, local_estimated_error, local_estimated_error_prev, local_param_errors
+    return local_nominal_error, local_estimated_error, local_estimated_error_prev#, local_param_errors
 
 def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: int, genarate="false"):
     num_cores = cpu_count()
@@ -182,17 +182,16 @@ def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: i
     nominal_error = [x[0] for x in results]
     estimated_error = [x[1] for x in results]
     estimated_error_prev = [x[2] for x in results]
-    params_error = np.array([x[3] for x in results])
+    #params_error = np.array([x[3] for x in results])
 
     nominal_error_median = sum(nominal_error)/len(nominal_error)
     estimated_error_median = sum(estimated_error)/len(estimated_error)
     estimated_error_prev_median = sum(estimated_error_prev)/len(estimated_error_prev)
-    params_error_median = np.sum(params_error, axis=0)/len(params_error)
+    #params_error_median = np.sum(params_error, axis=0)/len(params_error)
 
     print(f"Nominal error: {nominal_error_median:.6f}\nAfter calibration: {estimated_error_median:.6f}\n\nDifference: {(nominal_error_median - estimated_error_median):.6f}")
     print(f"Previous difference: {(nominal_error_median - estimated_error_prev_median):.6f}\n\nContribution of new: {(estimated_error_prev_median - estimated_error_median):.6f}")
-    print(params_error_median)
-    #return nominal_error_median, estimated_error_median, estimated_error_prev_median, params_error_median
+    #print(params_error_median)
 
 def write_results(model: hayati_model.HayatiModel):
     tfs = model.get_all_transition_matrixes([0, 0, 0, 0, 0, 0], 'estimated')[1:-1]
