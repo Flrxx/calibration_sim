@@ -39,7 +39,7 @@ class MCX:
         self.null_value = None
         self.robot_parameters = get_parameters(
             os.path.join(self._path, "src/config", config))
-        if not self.__connect("192.168.56.6"):
+        if not self.__connect("192.168.2.100"):
             raise Exception('Failed to connect') 
         try:
             if self.is_real:
@@ -60,7 +60,7 @@ class MCX:
         parameter_tree = motorcortex.ParameterTree()
         self.motorcortex_types = motorcortex.MessageTypes()
         license_file = os.path.join(
-            self._path, 'src', 'license', 'mcx_sim.cert.pem')
+            self._path, 'src', 'license', 'mcx.cert.pem')
         
         try:            
             self.req, self.sub = motorcortex.connect(f'wss://{ip}:5568:5567', self.motorcortex_types, parameter_tree,
@@ -191,11 +191,12 @@ class MCX:
                 print(f"Started pose {i + 2 + self.start_num}")     
                 self.execute_moveJ(pose[:6])
                 print(f"Done pose {i + 2 + self.start_num}")
-                input()
+                
                 #time.sleep(2)
                 tcp_coords_nom = self.robot_PoseTransformer.calcJointToCartPose(pose[:6]).jointtocartlist[0].cartpose.coordinates[0:3]
                 distance_theor = sqrt((tcp_coords_nom[0] - zero_point[0])**2 + (tcp_coords_nom[1] - zero_point[1])**2 + (tcp_coords_nom[2] - zero_point[2])**2)
                 print(f"Theoretical distance: {(distance_theor * 1000):.2f} mm")
+                input()
                 wire_len = self.get_wire_distance(self.null_value)
                 if wire_len > 0:
                     print(f"Wire lenght: {wire_len}")
