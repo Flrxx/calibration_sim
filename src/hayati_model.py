@@ -60,10 +60,11 @@ class HayatiModel:
         
         self.angle_idexes = [i for i, e in enumerate(self.error_list) if any(sub in e for sub in ("alpha", "theta", "beta"))]
         self.fieldnames_options = {
-            "wire_contributions" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'index', *self.error_list],
+            "wire_contributions" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'index', 'obj', *self.error_list],
             "wire_samples": ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'index', 'd'],
             "random_poses" : ['q1', 'q2', 'q3', 'q4', 'q5', 'q6'],
             "test_result": ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'd_encoder', 'diff']
+            
         }
 
         self.wire_limits = [config["wire_limits_l_mm"] / 1000, config["wire_limits_h_mm"] / 1000]

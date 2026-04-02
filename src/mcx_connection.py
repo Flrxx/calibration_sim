@@ -6,7 +6,7 @@ import time
 import copy
 import serial
 import argparse
-
+from scipy.spatial.transform import Rotation
 
 from dataset_generation_wire import calculate_distance
 from csv_routines import read_dataset, write_dataset, add_line_csv
@@ -146,7 +146,7 @@ class MCX:
         if self.null_value != -1:
             print(f"Null value: {self.null_value}")
 
-    def move_through_dataset(self, dataset_poses: np.ndarray, zero_pose: np.ndarray, model):        
+    def move_through_cal_dataset(self, dataset_poses: np.ndarray, zero_pose: np.ndarray, model):        
         zero_point = self.robot_PoseTransformer.calcJointToCartPose(zero_pose).jointtocartlist[0].cartpose.coordinates
 
         result = np.zeros(shape=(len(dataset_poses), 8))
@@ -240,7 +240,7 @@ class MCX:
         contribution_dataset = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])[:, 0:7]
         contribution_dataset[:, 0:6] *= DEG
         contribution_dataset = contribution_dataset[self.start_num:, :]
-        calibration_dataset = self.move_through_dataset(contribution_dataset, model.zero_wire_angles.copy(), model)
+        calibration_dataset = self.move_through_cal_dataset(contribution_dataset, model.zero_wire_angles.copy(), model)
         calibration_dataset[:, 0:6] /= DEG
         write_dataset(calibration_dataset, model.calibration_dataset, model.fieldnames_options["wire_samples"])
         print("Done")
@@ -301,6 +301,76 @@ class MCX:
         validation_dataset[:, 6:] *= 1000
         write_dataset(validation_dataset, "results/ARM95/validation_results.csv", model.fieldnames_options["test_result"])
         print("Done")
+
+    def calculate_wire_angles(self, model: hayati_model.HayatiModel, pose: np.ndarray):
+        point = self.robot_PoseTransformer.calcJointToCartPose(pose).jointtocartlist[0].cartpose.coordinates
+        point_coords = point[0:3]
+        euler_angles = point[3:]
+        wire_vec = point_coords - model.zero_offset_nominal
+        wire_vec /= np.linalg.norm(wire_vec)
+
+        #point_coords /= np.linalg.norm(point_coords)
+        
+        prod_dir = np.dot(model.zero_wire_direction, wire_vec)
+        angle_dir = np.arccos(prod_dir) / DEG
+
+        r = Rotation.from_euler('zyx', euler_angles)
+        z_dir = r.as_matrix()[0:3, 2]
+        prod_z = np.dot(z_dir, -wire_vec)
+        angle_z = np.arccos(prod_z) / DEG
+        return angle_dir, angle_z
+
+    def move_through_angle_dataset(self, model: hayati_model.HayatiModel, dataset_poses: np.ndarray):
+        zero_pose = model.zero_wire_angles
+        zero_point = self.robot_PoseTransformer.calcJointToCartPose(zero_pose).jointtocartlist[0].cartpose.coordinates
+
+        result = np.zeros(shape=(dataset_poses.shape[0], dataset_poses.shape[1] + 3))
+        #dataset_poses = dataset_poses[:, :6]
+        
+        self.execute_moveJ(zero_pose)
+        self.null_value = self.get_wire_distance(0)
+        start_pose = self.robot_PoseTransformer.calcJointToCartPose(dataset_poses[0]).jointtocartlist[0].cartpose.coordinates
+        for i, pose in enumerate(dataset_poses): 
+            print(f"Started pose {i + 2 + self.start_num}")     
+            tcp_coords_nom = self.robot_PoseTransformer.calcJointToCartPose(pose).jointtocartlist[0].cartpose.coordinates[0:3]
+            distance_theor = sqrt((tcp_coords_nom[0] - zero_point[0])**2 + (tcp_coords_nom[1] - zero_point[1])**2 + (tcp_coords_nom[2] - zero_point[2])**2)
+            
+            # vertical_offset_point =  copy.deepcopy(zero_point)
+            # vertical_offset_point[2] += distance_theor
+            vertical_offset_point = start_pose
+            print(f"Theoretical distance: {(distance_theor * 1000):.2f} mm")
+        
+            self.execute_moveL(vertical_offset_point)
+            #time.sleep(1)
+            vertical_offset_pose = self.joint_subscription.read()[0].value
+            
+            self.execute_moveJ(pose)
+            print(f"Done pose {i + 2 + self.start_num}")
+            #input()
+            time.sleep(2)
+            wire_len = self.get_wire_distance(self.null_value)
+            if wire_len > 0:
+                print(f"Wire lenght: {wire_len}")
+
+            result[i, 0:6] = self.joint_subscription.read()[0].value
+            result[i, 6] = wire_len / 1000 - distance_theor
+            angle_dir, angle_z = self.calculate_wire_angles(model, result[i, 0:6])
+            print(angle_dir, angle_z)
+
+            result[i, 7] = angle_dir
+            result[i, 8] = angle_z
+            
+            add_line_csv((result[i]), "datasets/ARM95/wire/log.csv", ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_real', 'ang_dir', 'angle_z'])
+            self.execute_moveJ(vertical_offset_pose)
+            self.move_to_start([], zero_point)
+        return result
+
+    def write_angle_error(self, model: hayati_model.HayatiModel, poses: np.ndarray):
+        res = self.move_through_angle_dataset(model, poses)
+        res[:, :6] /= DEG
+        res[:, 6] *= 1000
+        write_dataset(res, "results/ARM95/angle_test_results.csv", ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_real', 'ang_dir', 'angle_z'], tolerance="0.2f")
+
     
 def main(args):
     with open("src/config/ARM95_calibration.json", 'r') as config_file:
@@ -314,12 +384,31 @@ def main(args):
         mcx.write_calibration_dataset(model)
     elif args.mode == "validation":
         mcx.write_validation_dataset(model)
+    elif args.mode == "angle_error":
+        poses = np.array([
+                            [14.65, -1.97, 129.8, -37.84, 89.99, -14.64],
+                            
+                            [-38.13, 38.2, 102.69, -50.89, 89.99, 38.14],
+                            [-38.13, 25.09, 94.9, -30, 89.99, 38.14],
+                            [-23.66,  11.98, 114.02, -36, 89.99, 23.67],
+                            [-9.3, 4.06, 123.61, -37.67, 89.99, 9.31],
+                            [-0.85, 0.97, 126.9, -37.88, 89.99, 0.87],
+                            
+                            [26.36, -1.64, 129.49, -37.85, 89.99, -26.35],
+                            [39.02,  1.9, 125.93, -37.83, 89.99, -39.01],
+                            [49.88, 8.79, 118.07, -36.86, 89.99, -49.87], 
+                            [59.67, 20.49, 102.01, -32.51, 89.99, -59.66], 
+                            [59.67, 34.85, 110.02, -54.87, 89.99, -59.66],                             
+                            ])
+        poses *= DEG
+        mcx.write_angle_error(model, poses)
     else: 
         print("Wrong mode")
+    print("Done")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-m", "--mode", help="calibration or validation", default="calibration")
+    parser.add_argument("-m", "--mode", help="calibration or validation", default="angle_error")
     parser.add_argument("-s", "--start_num", help="Choose model to be visualized. Default: nominal", type=int, default=2)
     parser.add_argument("--is_real", action='store_true')
     args = parser.parse_args()
