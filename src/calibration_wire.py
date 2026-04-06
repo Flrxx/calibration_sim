@@ -86,11 +86,19 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[]):
 
             optimizing_param = calibrate_single_param(model, single_param_dataset)        
             
-            nominal_value = model.nominal_dh[param_num][param_letter_num]
             final_value = optimizing_param.x[0]
             if not is_real:
-                real_value = model.real_dh[param_num][param_letter_num]
-                final_error = final_value -real_value
+                model.estimated_dh[param_num][param_letter_num] = final_value 
+
+                nom_params = model.get_readable_params("nominal")
+                est_params = model.get_readable_params("estimated")
+                real_params = model.get_readable_params("real")
+
+                nominal_value = nom_params[param_num][param_letter_num] #model.nominal_dh[param_num][param_letter_num]
+                real_value = real_params[param_num][param_letter_num] #model.real_dh[param_num][param_letter_num]
+                final_value = est_params[param_num][param_letter_num]
+                
+                final_error = final_value - real_value
                 start_error = nominal_value - real_value  
 
                 if (real_value != 0):         
@@ -102,27 +110,23 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[]):
                 else:
                     start_error_rel = 100
                     final_error_rel = 100
-                model.estimated_dh[param_num][param_letter_num] = final_value 
-                
-                nom_params = model.get_readable_params("nominal")
-                est_params = model.get_readable_params("estimated")
-                real_params = model.get_readable_params("real")
-                print(nom_params[:, :4])
-                print()
-                print(est_params[:, :4])
-                print()
-                print(real_params[:, :4])
 
                 if start_error_rel != 0:
-                    param_errors[i] = (abs(start_error_rel) - abs(final_error_rel)) / abs(start_error_rel) * 100 #%
+                    param_errors[i] = (abs(start_error) - abs(final_error))# / abs(start_error_rel) * 100 #%
                 else:
-                    param_errors[i] = 100
+                    param_errors[i] = 0
                 
             else:
                 model.estimated_dh[param_num][param_letter_num] = final_value 
 
-                
+
     if not is_real:
+        # print(nom_params[:, :4])
+        # print()
+        # print(est_params[:, :4])
+        # print()
+        # print(real_params[:, :4])
+
         return [param_num, param_letter_num], param_errors 
     else:
         return True
@@ -154,7 +158,7 @@ def calibrate_single_param(model: hayati_model.HayatiModel, dataset: Union[np.nd
                         model.nominal_dh[param_num][param_letter_num] + 2/1000)
 
     res = minimize(loss_function, x0=model.nominal_dh[param_num][param_letter_num], 
-                   method='SLSQP', tol=1e-12)#, bounds=bounds)
+                   method='SLSQP', tol=1e-16)#, bounds=bounds)
     return res
 
 def calculate_estimated_distance(model: hayati_model.HayatiModel, angles: Union[np.ndarray, list], zero_pos: Union[np.ndarray, list]):
@@ -218,11 +222,11 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
         last_indexes, param_errors_new  = execute_calibration(copy_model, dataset=dataset) 
         local_param_errors += param_errors_new
 
-        new_nom, new_est, new_esp_prev = check_results(copy_model, last_indexes)
-        local_nominal_error += new_nom
-        local_estimated_error += new_est
-        local_estimated_error_prev += new_esp_prev
-        copy_model.reset_estimated_dh()
+        # new_nom, new_est, new_esp_prev = check_results(copy_model, last_indexes)
+        # local_nominal_error += new_nom
+        # local_estimated_error += new_est
+        # local_estimated_error_prev += new_esp_prev
+        # copy_model.reset_estimated_dh()
     
     local_param_errors /= tries_count
     local_nominal_error /= tries_count

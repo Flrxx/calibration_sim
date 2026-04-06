@@ -61,7 +61,7 @@ def calculate_optimal_position(model: hayati_model.HayatiModel, i_target: int, a
     
     def objective(angles):
         output = calculate_contribution(model, angles)
-        return -(output[i_target]**2 - 1 * np.sum(output[0:i_target]**2) - 5 * np.sum(output[i_target + 1:]**2))  #- max(np.concatenate([output[0:i_target], output[i_target + 1: border]]))**2
+        return -(output[i_target]**2    )#- 1 * np.sum(output[0:i_target]**2) - 5 * np.sum(output[i_target + 1:]**2))  #- max(np.concatenate([output[0:i_target], output[i_target + 1: border]]))**2
 
     cons = []
     if border == -1:
@@ -102,10 +102,10 @@ def calculate_optimal_position(model: hayati_model.HayatiModel, i_target: int, a
     #         return np.concatenate([upper, lower])
     #     cons.append({'type': 'ineq', 'fun': future_limits})
 
-    # def value_floor(angles):
-    #     contribution = calculate_contribution(model, angles)
-    #     return abs(contribution[i_target]) - max(abs(contribution))
-    # cons.append({'type': 'ineq', 'fun': value_floor})
+    def value_floor(angles):
+        contribution = calculate_contribution(model, angles)
+        return abs(contribution[i_target]) - max(abs(contribution[i_target + 1:]))
+    #cons.append({'type': 'ineq', 'fun': value_floor})
 
     def wire_limits(angles):    
         # z limits
@@ -179,6 +179,7 @@ def _generate_batch(tries_count, model: hayati_model.HayatiModel, i_target, user
             # elif abs(single_contribution[i_target]) > abs(local_contributions[similar_index][i_target]):
             #     local_samples[similar_index] = new_sample.copy()
             #     local_contributions[similar_index] = single_contribution.copy()
+            
             elif abs(objective_value) < abs(local_objective_values[similar_index]):
                 local_samples[similar_index] = new_sample.copy()
                 local_contributions[similar_index] = single_contribution.copy()
