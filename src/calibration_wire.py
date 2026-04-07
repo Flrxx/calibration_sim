@@ -76,17 +76,21 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[]):
         dataset[:, 7] /= 1000
     param_errors = np.zeros(len(model.error_list))
     params_values = np.zeros(shape=(len(model.error_list), 2))
+
     for j in range(1):
-        #print(j)
         for i in range (len(model.error_list)):
             single_param_dataset = dataset[dataset[:, 6] == i]
+            # if i == 7:
+            #     print(single_param_dataset)
             if(len(single_param_dataset) == 0):
                 continue
             param_num, param_letter_num = model.params_from_letters(model.error_list[i])        
 
-            optimizing_param = calibrate_single_param(model, single_param_dataset)        
+            optimizing_param = calibrate_single_param(model, single_param_dataset)     
             
             final_value = optimizing_param.x[0]
+            # if i == 7:
+            #     print(final_value)
             if not is_real:
                 model.estimated_dh[param_num][param_letter_num] = final_value 
 
@@ -113,6 +117,7 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[]):
 
                 if start_error_rel != 0:
                     param_errors[i] = (abs(start_error) - abs(final_error))# / abs(start_error_rel) * 100 #%
+                    #print(param_errors)
                 else:
                     param_errors[i] = 0
                 
@@ -214,21 +219,26 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
     local_estimated_error = 0.0
     local_estimated_error_prev = 0.0
     for _ in range(tries_count):
-        if generate == "true":
+        if generate:
             new_dh = generate_real_dh(copy_model)
             copy_model.change_real_dh(new_dh)
         dataset = measure_all_distances(copy_model)
 
         last_indexes, param_errors_new  = execute_calibration(copy_model, dataset=dataset) 
+        #print(param_errors_new)
         local_param_errors += param_errors_new
 
         # new_nom, new_est, new_esp_prev = check_results(copy_model, last_indexes)
         # local_nominal_error += new_nom
         # local_estimated_error += new_est
         # local_estimated_error_prev += new_esp_prev
-        # copy_model.reset_estimated_dh()
+        
+        
+        copy_model.reset_estimated_dh()
     
-    local_param_errors /= tries_count
+    #print(local_param_errors)
+    local_param_errors /= (tries_count)
+    #print(local_param_errors)
     local_nominal_error /= tries_count
     local_estimated_error /= tries_count
     local_estimated_error_prev /= tries_count
@@ -251,6 +261,7 @@ def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: i
     estimated_error = [x[1] for x in results]
     estimated_error_prev = [x[2] for x in results]
     params_error = np.array([x[3] for x in results])
+    #print(params_error)
 
     nominal_error_median = sum(nominal_error)/len(nominal_error)
     estimated_error_median = sum(estimated_error)/len(estimated_error)
@@ -309,18 +320,20 @@ def main(args):
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
     model = hayati_model.HayatiModel(config)
-    if args.generate == "true":
-        make_many_calibration_attempts(model, args.num_of_tries, genarate=args.generate)  # ,params_error
-
-    else:
+    if args.is_real:
         execute_calibration(model)
         write_results(model)
         write_validation_dataset(model)
+    else:
+        make_many_calibration_attempts(model, args.num_of_tries, genarate=args.generate)  # ,params_error
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: src/config/ARM95_calibration.json", default="src/config/ARM95_calibration.json")
-    parser.add_argument("-g", "--generate", help="Generate new real DH. Default: 'true'", default="true")
+    #parser.add_argument("-g", "--generate", help="Generate new real DH. Default: 'true'", default="true")
+    parser.add_argument("--generate", action='store_true')
+    parser.add_argument("--is_real", action='store_true')
     parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=1)
     args = parser.parse_args()
     main(args)

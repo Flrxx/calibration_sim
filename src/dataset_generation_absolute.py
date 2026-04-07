@@ -31,10 +31,13 @@ def generate_real_dh(model:hayati_model.HayatiModel):
             d_or_beta = model.d_delta
         else:
             d_or_beta = model.beta_delta
+            # print(i)
+            # print("beta")
         
         new_dh[i][0] += model.a_delta * uniform(-1, 1) * mask[i, 0]
         new_dh[i][1] += model.alpha_delta * uniform(-1, 1) * mask[i, 1]
         new_dh[i][2] += d_or_beta * uniform(-1, 1) * mask[i, 2]
+        #print(new_dh[i][2])
         new_dh[i][3] += model.theta_delta * uniform(-1, 1) * mask[i, 3]
 
         # print("[")

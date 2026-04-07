@@ -19,3 +19,4 @@ print(objective(a, 1))
 print(objective(b, 1))
 print(objective(c, 1))
 
+

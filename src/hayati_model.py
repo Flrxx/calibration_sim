@@ -68,7 +68,8 @@ class HayatiModel:
         }
 
         self.wire_limits = [config["wire_limits_l_mm"] / 1000, config["wire_limits_h_mm"] / 1000]
-        self.angle_limit = config["angle_limit_deg"] * DEG
+        self.angle_limit_z = config["angle_limit_z_deg"] * DEG
+        self.angle_limit_wire = config["angle_limit_wire_deg"] * DEG
 
         self.distance_delta = config["distance_delta_mm"] / 1000
         self.angle_delta = config["angle_delta_deg"] * DEG
@@ -227,10 +228,12 @@ class HayatiModel:
 
         mask = np.zeros(shape=self.nominal_dh.shape, dtype=bool)
         mask[:, [1, 3]] = True
+        mask[1:3, [2]] = True
         res[mask] /= DEG
 
         mask = np.zeros(shape=self.nominal_dh.shape, dtype=bool)
         mask[:, [0, 2]] = True
+        mask[1:3, [2]] = False
         res[mask] *= 1000   
         return res 
     
