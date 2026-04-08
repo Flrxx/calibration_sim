@@ -232,7 +232,7 @@ class MCX:
                 result[i, 0:6] = self.joint_subscription.read()[0].value
                 self.execute_moveJ(vertical_offset_pose)
                 #time.sleep(1)
-            add_line_csv((result[i]), "datasets/ARM95/wire/test.csv", model.fieldnames_options["wire_samples"])
+            add_line_csv((result[i]), "datasets/ARM95/wire/log.csv", model.fieldnames_options["wire_samples"])
         self.move_to_start(previous_poses, zero_point)
         return result
     
@@ -283,7 +283,7 @@ class MCX:
             result[i, 7] = np.linalg.norm(calculate_distance(model, result[i, 0:6], "estimated"))
             result[i, 8] = wire_len / 1000
             result[i, 9] = abs(wire_len - result[i, 6]) - abs(wire_len - result[i, 7])
-            add_line_csv((result[i]), "datasets/ARM95/wire/test.csv", model.fieldnames_options["test_result"])
+            add_line_csv((result[i]), "datasets/ARM95/wire/log.csv", model.fieldnames_options["test_result"])
             
             self.execute_moveJ(vertical_offset_pose)
             

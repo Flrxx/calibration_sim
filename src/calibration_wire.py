@@ -15,55 +15,6 @@ from multiprocessing import Pool, cpu_count
 import copy
 from math_routines import DEG
 
-# def execute_calibration_all_at_once(model: hayati_model.HayatiModel, dataset=[]):
-#     is_real = 0
-#     if len(dataset) == 0:
-#         is_real = 1
-#         dataset = read_dataset(model.calibration_dataset, model.fieldnames_options["wire_samples"]) 
-#         mask = dataset[:, 6] >= 0
-#         dataset = dataset[mask]
-#         dataset[:, 0:6] *= DEG
-#         dataset[:, 7] /= 1000
-#     param_errors = np.zeros(len(model.error_list))
-    
-#     for i in range (len(model.error_list)):
-#         single_param_dataset = dataset[dataset[:, 6] == i]
-#         if(len(single_param_dataset) == 0):
-#             continue
-#         param_num, param_letter_num = model.params_from_letters(model.error_list[i])        
-
-#         optimizing_param = calibrate_single_param(model, single_param_dataset)        
-        
-        
-#         nominal_value = model.nominal_dh[param_num][param_letter_num]
-#         final_value = optimizing_param.x[0]
-#         if not is_real:
-#             real_value = model.real_dh[param_num][param_letter_num]
-#             final_error = final_value -real_value
-#             start_error = nominal_value - real_value  
-
-#             if (real_value != 0):         
-#                 start_error_rel = start_error/real_value
-#                 final_error_rel = final_error/real_value
-#                 # print(f"start {i}: {start_error_rel}")
-#                 # print(f"end {i}: {final_error_rel}")
-
-#             else:
-#                 start_error_rel = 100
-#                 final_error_rel = 100
-#             model.estimated_dh[param_num][param_letter_num] = final_value 
-#             if start_error_rel != 0:
-#                 param_errors[i] = (abs(start_error_rel) - abs(final_error_rel)) / abs(start_error_rel) * 100 #%
-#             else:
-#                 param_errors[i] = 100
-#         else:
-#             model.estimated_dh[param_num][param_letter_num] = final_value 
-                
-#     if not is_real:
-#         return [param_num, param_letter_num], param_errors 
-#     else:
-#         return True
-
 
 def execute_calibration(model: hayati_model.HayatiModel, dataset=[]):
     is_real = 0
@@ -228,10 +179,10 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
         #print(param_errors_new)
         local_param_errors += param_errors_new
 
-        # new_nom, new_est, new_esp_prev = check_results(copy_model, last_indexes)
-        # local_nominal_error += new_nom
-        # local_estimated_error += new_est
-        # local_estimated_error_prev += new_esp_prev
+        new_nom, new_est, new_esp_prev = check_results(copy_model, last_indexes)
+        local_nominal_error += new_nom
+        local_estimated_error += new_est
+        local_estimated_error_prev += new_esp_prev
         
         
         copy_model.reset_estimated_dh()
