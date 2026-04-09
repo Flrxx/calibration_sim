@@ -2,7 +2,7 @@ import csv
 import argparse
 import json
 import numpy as np
-from random import uniform, random
+from random import uniform, random, normalvariate
 from math_routines import extract_zyx_euler
 import hayati_model
 from typing import Union
@@ -37,8 +37,12 @@ def generate_real_dh(model:hayati_model.HayatiModel):
         new_dh[i][0] += model.a_delta * uniform(-1, 1) * mask[i, 0]
         new_dh[i][1] += model.alpha_delta * uniform(-1, 1) * mask[i, 1]
         new_dh[i][2] += d_or_beta * uniform(-1, 1) * mask[i, 2]
-        #print(new_dh[i][2])
         new_dh[i][3] += model.theta_delta * uniform(-1, 1) * mask[i, 3]
+
+        # new_dh[i][0] += np.random.normal(0, model.a_delta) * mask[i, 0]
+        # new_dh[i][1] += np.random.normal(0, model.alpha_delta) * mask[i, 1]
+        # new_dh[i][2] += np.random.normal(0, d_or_beta) * mask[i, 2]
+        # new_dh[i][3] += np.random.normal(0, model.theta_delta) * mask[i, 3]
 
         # print("[")
         # print(f"    {new_dh[i][0]:0.6f}, {new_dh[i][1]:0.6f}, {new_dh[i][2]:0.6f}, {new_dh[i][3]:0.6f}, {model.nominal_dh[i][-1]}")
