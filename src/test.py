@@ -1,75 +1,50 @@
-# import hayati_model
-# import json
-# import numpy as np
-
-# def main():
-#     with open("src/config/ARM95_calibration.json", 'r') as config_file:
-#         config = json.load(config_file)
-#     model = hayati_model.HayatiModel(config)
-#     model.nominal_dh = np.array([
-#     [0,1.5708,0,3.14,0],
-#     [0.46, 0, 0,1.5708,1],
-#     [ 0.38, 0, 0, 0, 1],
-#     [0,-1.5708,-0.135, -1.5708,0],
-#     [0,-1.5708,0.109,0,0],
-#     [0,0,0.176,0, 0]
-#     ])
-#     model.estimated_dh = np.array([
-#         [-0.0012779183803429634, 1.572714450821018, -2.5062639459755162e-05, 3.1422950951906374, 0.0],
-#         [0.4574230096363143, 0.0, -0.004532849759717515, 1.5662811768078075, 1.0],
-#         [0.37935629619888683, 0.0003489506736117725, 0.021955132250431407, -0.0038254714558886276, 1.0],
-#         [-0.00016091350665088067, -1.570828117172346, -0.13788202710337846, -1.5708332140610803, 0.0],
-#         [-0.0009972816983362385, -1.5688969089496632, 0.11017597889436716, 0.0, 0.0],
-#         [-4.681571669389498e-06, 0.0, 0.16736879843437474, 1.2752111549738254e-08, 0.0]
-#     ])
-    
-#     nom_params = model.get_readable_params("nominal")
-#     est_params = model.get_readable_params("estimated")
-#     print(nom_params[:, :4])
-#     print()
-#     print(est_params[:, :4])
-
-# if __name__ == "__main__":
-#     main()
-
-import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
+from math import acos
+from hayati_model import HayatiModel
+import argparse
+import json
+from math_routines import DEG
 
-# Читаем CSV-файл, берём первые два столбца
-df = pd.read_csv('results/ARM95/angle_test_results.csv', usecols=[6, 7], header=None)  # header=None, если нет заголовков
+def wire_limits(model, angles):    
+    # z limits
+    matrix = model.get_transition_matrix(angles, "nominal")
+    z_dir = matrix[0:3, 2]
+    scalar_z = np.vdot(z_dir, -model.zero_wire_direction)
+    
+    #np.clip(scalar_z, -1.0, 1.0)
+    #alpha_z = acos(scalar_z)
+    #angle_cons_z = np.array([alpha_z, model.angle_limit_z - alpha_z]) # so angle would fit
 
-# Извлекаем данные
-x = df.iloc[1:, 1].astype(float) # первый столбец
-print(x.values)
-x.values[1:6] *= -1 # первый столбец
+    wire = matrix[0:3, 3] - model.zero_offset_nominal
+    wire_len = np.linalg.norm(wire) 
+    scalar_wire = np.vdot(-(wire / wire_len), z_dir)
+    np.clip(scalar_wire, -1, 1)
+    alpha_z = acos(scalar_wire)
+    angle_cons_z = np.array([alpha_z, model.angle_limit_z - alpha_z]) # so angle would fit
+    
+    # wire limits        
+    len_cons = np.array([wire_len - model.wire_limits[0], model.wire_limits[1] - wire_len]) # so wire len would fit
 
-y = df.iloc[1:, 0].astype(float)  # второй столбец
-print(y.values)
+    scalar_wire_ang = np.vdot(wire / wire_len, model.zero_wire_direction)  # > 0 so wire stretch forward        
+    alpha = acos(scalar_wire_ang)
+    print(alpha / DEG)
+    angle_cons_wire = np.array([alpha, model.angle_limit_wire - alpha]) # so angle would fit
 
-# Строим точечный график
-plt.figure(figsize=(10, 6))
-plt.scatter(x, y, alpha=0.7)
-plt.title('График по данным из CSV')
-plt.xlabel('Угол, градусы')
-plt.ylabel('Ошибка, мм')
-plt.grid(True, alpha=0.3)
-plt.show()
+    return np.concatenate(([scalar_z], [scalar_wire], angle_cons_z,  [scalar_wire_ang], angle_cons_wire, len_cons)) #angle_cons_wire,
 
-# import numpy as np
-# import matplotlib.pyplot as plt
 
-# # Загружаем данные: берём только первые два столбца
-# data = np.loadtxt('results/ARM95/angle_test_results.csv', delimiter='.', usecols=(6, 7))
 
-# # Разделяем на x и y
-# x = data[1:, 0]
-# y = data[1:, 1]
+parser = argparse.ArgumentParser()
+parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: src/config/ARM95_calibration.json", default="src/config/ARM95_calibration.json")
+args = parser.parse_args()
 
-# # Строим график
-# plt.figure(figsize=(10, 6))
-# plt.scatter(x, y, color='red', s=50)
-# plt.title('Точечный график из CSV')
-# plt.xlabel('Угол, градусы')
-# plt.ylabel('Ошибка, мм')
-# plt.grid(True)
-# plt.show()
+with open(args.config, 'r') as config_file:
+    config = json.load(config_file)
+model = HayatiModel(config)
+
+
+angles = np.array([15.127,	23.399,	136.408,	20.193,	-48.524,	-102.140]) * DEG
+print(wire_limits(model, angles))
+
+

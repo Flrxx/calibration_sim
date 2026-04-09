@@ -179,10 +179,10 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
         #print(param_errors_new)
         local_param_errors += param_errors_new
 
-        new_nom, new_est, new_esp_prev = check_results(copy_model, last_indexes)
-        local_nominal_error += new_nom
-        local_estimated_error += new_est
-        local_estimated_error_prev += new_esp_prev
+        # new_nom, new_est, new_esp_prev = check_results(copy_model, last_indexes)
+        # local_nominal_error += new_nom
+        # local_estimated_error += new_est
+        # local_estimated_error_prev += new_esp_prev
         
         
         copy_model.reset_estimated_dh()
@@ -251,6 +251,8 @@ def validate_wire(model: hayati_model.HayatiModel):
 
     res = np.zeros(shape=(validation_dataset.shape)) 
     for i, line in enumerate(validation_dataset[:-1]):
+        if line[8] <= 0:
+            continue
         distance_theoretical = np.linalg.norm(calculate_distance(model, line[0:6], "nominal"))
         distance_estimated = np.linalg.norm(calculate_distance(model, line[0:6], "estimated"))
         

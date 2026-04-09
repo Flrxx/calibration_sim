@@ -1,19 +1,32 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from math import acos
 
-def objective(output, i_target):
-    #output = calculate_contribution(model, angles)
-    return -(output[i_target]**2 - np.sum(output[0:i_target]**2) - 5 * np.sum(output[i_target + 1:]**2)) 
+def wire_limits(model, angles):    
+    # z limits
+    matrix = model.get_transition_matrix(angles, "nominal")
+    z_dir = matrix[0:3, 2]
+    scalar_z = np.vdot(z_dir, -model.zero_wire_direction)
+    
+    #np.clip(scalar_z, -1.0, 1.0)
+    #alpha_z = acos(scalar_z)
+    #angle_cons_z = np.array([alpha_z, model.angle_limit_z - alpha_z]) # so angle would fit
 
-a = np.array([-1.268, -0.060, -0.067, 0.000, 0.002,	0.112, 0.035, -0.014, 0.001, -0.010, -0.002, 0.083,	
-             -0.011,	-0.015,	0.054,	-0.012,	-0.003,	0.017,	-0.001,	0.000,	-0.000,	-0.000,	0.000,	-0.000])
-b = np.array([-0.324,	-0.030,	-0.027,	-0.001,	-0.027,	0.016,	0.030,	
-              0.001,	0.005,	0.027,	-0.005,	0.030,	-0.027,	0.001,	
-              -0.030,	-0.027,	-0.009,	0.002,	-0.000,	-0.003,	-0.002,	0.004,	-0.000,	-0.000])
+    wire = matrix[0:3, 3] - model.zero_offset_nominal
+    wire_len = np.linalg.norm(wire) 
+    scalar_wire = np.vdot(-(wire / wire_len), z_dir)
+    np.clip(scalar_wire, -1, 1)
+    alpha_z = acos(scalar_wire)
+    angle_cons_z = np.array([alpha_z, model.angle_limit_z - alpha_z]) # so angle would fit
+    
+    # wire limits        
+    len_cons = np.array([wire_len - model.wire_limits[0], model.wire_limits[1] - wire_len]) # so wire len would fit
 
-c = np.array([-1.117,	0.016,	0.014,	0.400,	-0.275,	0.270,	0.669,
-            -0.323,	0.436,	0.276,	-0.123,	-0.310,	-0.204,
-            0.031,	-0.022,	-0.010,	0.060,	0.022,	-0.009,	-0.014,	0.048,	-0.005,	0.000,	-0.000])
+    scalar_wire = np.vdot(wire / wire_len, model.zero_wire_direction)  # > 0 so wire stretch forward        
+    alpha = acos(scalar_wire)
+    angle_cons_wire = np.array([alpha, model.angle_limit_wire - alpha]) # so angle would fit
+
+    return np.concatenate(([scalar_z], [scalar_wire], angle_cons_z,  [scalar_wire], angle_cons_wire, len_cons)) #angle_cons_wire,
 
 print(objective(a, 1))
 print(objective(b, 1))

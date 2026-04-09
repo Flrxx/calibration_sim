@@ -39,7 +39,7 @@ class MCX:
         self.null_value = None
         self.robot_parameters = get_parameters(
             os.path.join(self._path, "src/config", config))
-        if not self.__connect("192.168.2.100"):
+        if not self.__connect("192.168.56.3"):
             raise Exception('Failed to connect') 
         try:
             if self.is_real:
