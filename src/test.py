@@ -1,56 +1,56 @@
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+from math import acos
 
-def plot_parameter_comparison(before, after):
-    # Создаем индексы для 24 параметров (например, Link 1, Link 2...)
-    n_params = len(before)
-    indices = np.arange(1, n_params + 1)
-    
-    fig, ax = plt.subplots(figsize=(14, 7))
-    
-    width = 0.35  # Ширина столбца
+import json
 
-    # Строим столбцы для каждого параметра
-    rects1 = ax.bar(indices - width/2, before, width, 
-                    label='Before Calibration', color='#ff9999', edgecolor='red', alpha=0.8)
-    rects2 = ax.bar(indices + width/2, after, width, 
-                    label='After Calibration', color='#9999ff', edgecolor='blue', alpha=0.8)
+from math_routines import DEG
+from hayati_model import HayatiModel
 
-    # Оформление осей
-    ax.set_xlabel('Parameter Index (Link / Joint #)', fontsize=12)
-    ax.set_ylabel('Error Value (mm / rad)', fontsize=12)
-    ax.set_title('Robot Parameters Calibration Results (24 Parameters)', fontsize=14)
-    
-    # Настройка делений (чтобы каждое число от 1 до 24 было подписано)
-    ax.set_xticks(indices)
-    ax.set_xticklabels([f'{i}' for i in indices])
+def wire_limits(model, angles):    
+        # z limits
+        matrix = model.get_transition_matrix(angles, "nominal")
+        z_dir = matrix[0:3, 2]
+        scalar_z = np.vdot(z_dir, -model.zero_wire_direction)
+        
+        #np.clip(scalar_z, -1.0, 1.0)
+        #alpha_z = acos(scalar_z)
+        #angle_cons_z = np.array([alpha_z, model.angle_limit_z - alpha_z]) # so angle would fit
 
-    # Сетка как в оригинале (клеточками)
-    ax.grid(True, which='major', axis='y', linestyle='--', alpha=0.7)
-    ax.set_axisbelow(True)
+        wire = matrix[0:3, 3] - model.zero_offset_nominal
+        wire_len = np.linalg.norm(wire) 
+        scalar_wire = np.vdot(-(wire / wire_len), z_dir)
+        np.clip(scalar_wire, -1, 1)
+        alpha_z = acos(scalar_wire)
+        print(alpha_z / DEG)
+        angle_cons_z = np.array([alpha_z, model.angle_limit_z - alpha_z]) # so angle would fit
+        
+        # wire limits        
+        len_cons = np.array([wire_len - model.wire_limits[0], model.wire_limits[1] - wire_len]) # so wire len would fit
 
-    # Добавляем легенду
-    ax.legend(loc='upper right', frameon=True, edgecolor='black')
+        scalar_wire = np.vdot(wire / wire_len, model.zero_wire_direction)  # > 0 so wire stretch forward        
+        alpha = acos(scalar_wire)
+        print(alpha / DEG)
+        
+        angle_cons_wire = np.array([alpha, model.angle_limit_wire - alpha]) # so angle would fit
 
-    # Дополнительно: выведем общую точность (RMS) в углу
-    rms_before = np.sqrt(np.mean(before**2))
-    rms_after = np.sqrt(np.mean(after**2))
-    
-    stats_text = (f'RMS Before: {rms_before:.3f}\n'
-                  f'RMS After: {rms_after:.3f}')
-    
-    # Размещаем текст со статистикой в рамке
-    ax.text(0.02, 0.95, stats_text, transform=ax.transAxes, fontsize=11,
-            verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.5))
+        return np.concatenate(([scalar_z], [scalar_wire], angle_cons_z,  [scalar_wire], angle_cons_wire, len_cons)) #angle_cons_wire,
 
-    plt.tight_layout()
-    plt.show()
+with open("src/config/ARM95_calibration.json", 'r') as config_file:
+        config = json.load(config_file)
+model = HayatiModel(config)
 
-# --- Пример данных ---
-np.random.seed(10)
-# Допустим, начальные ошибки параметров звеньев около 1-3 мм
-errors_before = np.random.normal(2.0, 0.5, 24) 
-# После калибровки ошибки упали до 0.1-0.5 мм
-errors_after = np.random.normal(0.4, 0.1, 24)
+a=np.array([14.654,23.941,141.203,-75.547,91.341,5.336]) * DEG
+b=np.array([14.716,23.986,141.223,-75.396,89.248,-0.021]) * DEG
+c=np.array([14.880,23.951,141.195,-75.698,89.514,-55.134]) * DEG
+d=np.array([14.538,23.984,141.249,-75.926,90.060,25.401]) * DEG
+e=np.array([14.847,23.899,141.374,-76.156,89.341,-70.747]) * DEG
 
-plot_parameter_comparison(errors_before, errors_after)
+print(wire_limits(model, a))
+print(wire_limits(model, b))
+print(wire_limits(model, c))
+print(wire_limits(model, d))
+print(wire_limits(model, e))
+
+
+

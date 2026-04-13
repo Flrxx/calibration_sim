@@ -58,8 +58,8 @@
     90.000,
     -14.64
   ],
-  "encoder_abs_tolerance_percent": 0.0,
-  "encoder_resolution_mm": 0.0,
+  "encoder_abs_tolerance_percent": 0.08,
+  "encoder_resolution_mm": 0.05,
   "max_z_angle": 3.14,  
   "generation_output": "datasets/ARM95/wire/generation_output.csv",
   "contribution_dataset": "datasets/ARM95/wire/third_try_contribution_dataset.csv",
@@ -71,7 +71,7 @@
                  "theta_5", "a_4", "d_5", "alpha_4", "beta_3", "theta_4", "alpha_3", "a_3", "theta_3", 
                  "beta_2", "alpha_2", "a_2", "d_4", "theta_2", "alpha_1", "a_1",      
                  "d_1", "theta_1"],
-  "wire_limits_l_mm": 15,
+  "wire_limits_l_mm": 30,
   "wire_limits_h_mm": 10000,
   "angle_limit_wire_deg": 60,
   "angle_limit_z_deg": 60,
@@ -79,11 +79,11 @@
   "distance_delta_mm": 0.0,
   "angle_delta_deg": 1.0,
   
-  "a_delta_mm": 1.5,
+  "a_delta_mm": 3,
   "alpha_delta_deg": 0.5,
-  "d_delta_mm": 3,
-  "theta_delta_deg": 0.5,
-  "beta_delta_deg": 0.5,
+  "d_delta_mm": 6,
+  "theta_delta_deg": 1,
+  "beta_delta_deg": 1,
 
   "ignore_errors_list": ["d_1", "theta_1"],
   "test_samples_number": 100

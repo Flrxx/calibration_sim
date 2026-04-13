@@ -31,7 +31,7 @@ def get_parameters(path: str) -> None:
         return e
 
 class MCX:
-    def __init__(self, config="config/ARM95.json", is_real=True, start_num=2):
+    def __init__(self, ip, config="config/ARM95.json", is_real=True, start_num=2):
         self._path = self.__project_path()
         self.is_real = is_real
         self.start_num = start_num - 2
@@ -39,7 +39,7 @@ class MCX:
         self.null_value = None
         self.robot_parameters = get_parameters(
             os.path.join(self._path, "src/config", config))
-        if not self.__connect("192.168.56.3"):
+        if not self.__connect(ip):
             raise Exception('Failed to connect') 
         try:
             if self.is_real:
@@ -373,13 +373,13 @@ class MCX:
 
     
 def main(args):
-    with open("src/config/ARM95_calibration.json", 'r') as config_file:
+    with open(args.config, 'r') as config_file:
         config = json.load(config_file)
     model = hayati_model.HayatiModel(config)
     
     # is_real = False
     # start_num = 64
-    mcx = MCX(config="ARM95.json", is_real=args.is_real, start_num=args.start_num)
+    mcx = MCX(args.ip, config="ARM95.json", is_real=args.is_real, start_num=args.start_num)
     if args.mode == "calibration":
         mcx.write_calibration_dataset(model)
     elif args.mode == "validation":
@@ -408,6 +408,8 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("-c", "--config", help="", default="src/config/ARM95_calibration.json")
+    parser.add_argument("--ip", help="", default="192.168.2.100")
     parser.add_argument("-m", "--mode", help="calibration or validation", default="angle_error")
     parser.add_argument("-s", "--start_num", help="Choose model to be visualized. Default: nominal", type=int, default=2)
     parser.add_argument("--is_real", action='store_true')
