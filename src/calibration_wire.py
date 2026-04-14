@@ -179,7 +179,6 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
     local_nom_param_errors = np.zeros(len(model.error_list))
     local_est_param_errors = np.zeros(len(model.error_list))
 
-
     local_nominal_error = 0.0
     local_estimated_error = 0.0
     local_estimated_error_prev = 0.0
@@ -239,9 +238,7 @@ def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: i
     estimated_error_median = sum(estimated_error)/len(estimated_error)
     estimated_error_prev_median = sum(estimated_error_prev)/len(estimated_error_prev)
     params_error_median = np.sum(params_error, axis=0)/len(params_error)
-    print()
     params_nom_error_median = np.sum(params_nom_error, axis=0)/len(params_error)
-    print()
     params_est_error_median = np.sum(params_est_error, axis=0)/len(params_error)
 
     print(f"Nominal error: {nominal_error_median:.6f}\nAfter calibration: {estimated_error_median:.6f}\n\nDifference: {(nominal_error_median - estimated_error_median):.6f}")
@@ -302,29 +299,44 @@ def write_validation_dataset(model: hayati_model.HayatiModel):
     write_dataset(validation_dataset, "results/ARM95/validation_results.csv", model.fieldnames_options["test_result"], tolerance = ".3f")
     print("Done")
 
-def _rate_batch_worker(model, i_target, poses, num_tries_in_batch):
-    param_num, param_letter_num = model.params_from_letters(model.error_list[i_target])
-    batch_error_vector = np.zeros(shape=(len(poses), num_tries_in_batch))
+def _rate_batch_worker(model: hayati_model.HayatiModel, i_target, zero_index, poses_len, num_tries_in_batch):
+    copy_model = copy.deepcopy(model)
+    param_num, param_letter_num = copy_model.params_from_letters(copy_model.error_list[i_target])
+    batch_error_vector = np.zeros(shape=(poses_len, num_tries_in_batch))
 
     for try_num in range(num_tries_in_batch):
-        new_dh = generate_real_dh(model)
-        model.change_real_dh(new_dh)
+        new_dh = generate_real_dh(copy_model)
+        copy_model.change_real_dh(new_dh)
+        dataset = measure_all_distances(copy_model)
         
-        real_value = model.real_dh[param_num, param_letter_num]
-        initial_value = calibrate_single_param(model, poses).x[0]
-        initial_error = abs(real_value - initial_value)
+        real_value = copy_model.real_dh[param_num, param_letter_num]
+        #print(real_value * 1000)
+        _, initial_error, _, _ = execute_calibration(copy_model, dataset=dataset)
+        #print(f"DH: { copy_model.nominal_dh[param_num, param_letter_num] * 1000}, {copy_model.estimated_dh[param_num, param_letter_num] * 1000}")
+
+        copy_model.reset_estimated_dh()
+        initial_error_value = initial_error[i_target]
         
-        for pose_num in range(len(poses)):
-            poses_new = np.delete(poses, pose_num, axis=0)
-            new_value = calibrate_single_param(model, poses_new).x[0]
+        for pose_num in range(poses_len):
+            dataset_new = np.delete(dataset, zero_index + pose_num, axis=0)
+            _, new_error, _, _ = execute_calibration(copy_model, dataset=dataset_new)
+            #print(new_error)
+            new_error_value = new_error[i_target]
+            #print(new_error_value)
             
-            batch_error_vector[pose_num, try_num] = initial_error - abs(real_value - new_value)
+            batch_error_vector[pose_num, try_num] = initial_error_value - new_error_value
+            #print(f"Error values: {initial_error_value}, {new_error_value}")
+            copy_model.reset_estimated_dh()
             
     return batch_error_vector
 
 def rate_poses_contributions(model, i_target, num_tries, floor=0):
     dataset = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
-    poses = np.array([elem for elem in dataset if elem[6] == i_target])
+    poses = dataset[dataset[:, 6] == i_target]
+    poses[:, 0:6] *= DEG
+    dataset = measure_all_distances(model)
+    zero_index = np.where(dataset[:, 6] == i_target)[0][0]
+    
     print(f"Starting analysis of {len(poses)} poses across {num_tries} tries...")
 
     num_cores = cpu_count()
@@ -334,16 +346,20 @@ def rate_poses_contributions(model, i_target, num_tries, floor=0):
     tasks = []
     for i in range(num_cores):
         current_batch_size = chunk_size + (1 if i < remainder else 0)
+         
         if current_batch_size > 0:
-            tasks.append((model, i_target, poses, current_batch_size))
+            tasks.append((model, i_target, zero_index, len(poses), current_batch_size))
 
     with Pool(processes=num_cores) as pool:
         results = pool.starmap(_rate_batch_worker, tasks)
 
     error_vector = np.hstack(results)
     
-    error_median = np.median(error_vector, axis=1)
+    error_median = np.median(error_vector, axis=1) * 1000
+    print(error_median)
     result_poses = poses[error_median > floor]
+    result_poses[:, 0:6] /= DEG
+    print(result_poses)
     
     print(f"Found {len(result_poses)} poses with positive contribution")
     write_dataset(result_poses, "datasets/ARM95/wire/positive_contributions.csv", 
@@ -355,7 +371,7 @@ def main(args):
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
     model = hayati_model.HayatiModel(config)
-    if args.mode == "generate":
+    if args.mode == "calibration":
         if args.is_real:
             execute_calibration(model)
             write_results(model)
@@ -374,12 +390,12 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: src/config/ARM95_calibration.json", default="src/config/ARM95_calibration.json")
-    parser.add_argument("-m", "--mode", help="generate or rate", default="generate")
+    parser.add_argument("-m", "--mode", help="calibration or rate", default="rate")
     parser.add_argument("--generate", action='store_true')
     parser.add_argument("--is_real", action='store_true')
     parser.add_argument("--draw", action='store_true')
-    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=1)
-    parser.add_argument("-i", "--i_target", help="", type=int, default=0)
+    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=20)
+    parser.add_argument("-i", "--i_target", help="", type=int, default=1)
     parser.add_argument("-f", "--floor", help="", type=float, default=0.0)
 
     args = parser.parse_args()
