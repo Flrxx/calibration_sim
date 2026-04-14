@@ -171,7 +171,7 @@ def _generate_batch(tries_count, model: hayati_model.HayatiModel, i_target, user
 
         if new_sample[0] is not None:
             single_contribution = calculate_contribution(model, new_sample)
-            single_coords = model.get_transition_matrix(new_sample, "nominal")[0:3, 3]
+            single_coords = model.get_transition_matrix(new_sample, "nominal")[0:3, 3].reshape(1, 3)
             similar_index = get_similar_index(new_sample, local_samples, angle_diff * DEG, single_coords, local_coords, len_diff / 1000)
             
             if similar_index is None:
@@ -228,47 +228,58 @@ def generate_single_layer(model: hayati_model.HayatiModel, i_target, user_joint_
     if erase_previous == "false":
         previous_res = read_dataset(model.generation_output, model.fieldnames_options["wire_contributions"])
         final_samples = (previous_res[:,0:6] * DEG)
-        final_contributions = previous_res[:,7:]
+        final_contributions = previous_res[:,8:]
+        final_objective_values = previous_res[:, 7]
+        final_coords = np.zeros(shape = (len(final_samples), 3))
+        for i in range(len(final_samples)):
+            final_coords[i] = model.get_transition_matrix(final_samples[i], "nominal")[0:3, 3].reshape(1, 3)
+
     elif erase_previous == "true":
         final_samples = np.array([]).reshape(0, 6)
         final_contributions = np.array([]).reshape(0, len(model.error_list))
         final_objective_values = np.array([]).reshape(0, 1)
+        final_coords = np.array([]).reshape(0, 3)
     else:
         raise ValueError("Wrong erase_previous")
     
-    for batch_samples, batch_contributions, batch_objective_value in results:
-        for new_sample, single_contribution, single_objective_value in zip(batch_samples, batch_contributions, batch_objective_value):
+    for batch_samples, batch_contributions, batch_objective_value, batch_coords in results:
+        for new_sample, single_contribution, single_objective_value, single_coords in zip(batch_samples, batch_contributions, batch_objective_value, batch_coords):
             
-            similar_index = get_similar_index(final_samples, new_sample, angle_diff * DEG)
+            similar_index = get_similar_index(new_sample, final_samples, angle_diff * DEG, single_coords, final_coords, len_diff / 1000)
             
             if similar_index is None:
                 final_samples = np.append(final_samples, new_sample.reshape(1, 6), axis = 0)
                 final_contributions = np.append(final_contributions, single_contribution.reshape(1, len(model.error_list)), axis = 0)
                 final_objective_values = np.append(final_objective_values, single_objective_value)
+                final_coords = np.append(final_coords, single_coords.reshape(1, 3), axis=0)
             # elif abs(single_contribution[i_target]) > abs(final_contributions[similar_index][i_target]):
             #     final_samples[similar_index] = new_sample
             #     final_contributions[similar_index] = single_contribution
-            elif abs(single_objective_value) < abs(final_objective_values[similar_index]):
+            elif single_objective_value < final_objective_values[similar_index]: #abs
                 final_samples[similar_index] = new_sample
                 final_contributions[similar_index] = single_contribution
                 final_objective_values[similar_index] = single_objective_value
-
+                final_coords[similar_index] = single_coords
 
     return {"samples": final_samples, "contributions": final_contributions, "objective_values": final_objective_values}
 
-def get_similar_index(new_sample: np.ndarray, samples, angle_delta,  new_sample_coords, samples_coords: np.ndarray, len_delta):     
+def get_similar_index(new_sample, samples, angle_delta, new_sample_coords, samples_coords, len_delta):     
     if len(samples) == 0:
         return None
     
     diffs_angle = np.abs(samples - new_sample)
-    diffs_len = np.abs(samples_coords - new_sample_coords)
-    
     is_similar_mask_angle = np.all(diffs_angle <= angle_delta, axis=1)
-    is_similar_mask_len = np.all(diffs_len <= len_delta, axis=1)
-    if (not np.any(is_similar_mask_angle)) and (not np.any(is_similar_mask_len)):
-        return None
     
-    return np.argmax(is_similar_mask_angle)
+    dist_tcp = np.linalg.norm(samples_coords - new_sample_coords, axis=1)
+    is_similar_mask_len = dist_tcp <= len_delta
+    
+    combined_mask = is_similar_mask_angle | is_similar_mask_len
+    
+    if np.any(combined_mask):
+        return np.argmax(combined_mask)
+    
+    return None
+
 
 def generate_samples(model: hayati_model.HayatiModel, i_target: int, user_joint_mask, 
                      tries_count, prev_eps, future_eps, angle_diff, len_diff, erase_previous, border: int, border_eps: float):
@@ -465,12 +476,12 @@ if __name__ == "__main__":
     parser.add_argument("-m", "--mode", help="Selected mode: 'generation' or 'check'. Default: 'generation'", default="generation")
     parser.add_argument("-mask", "--user_joint_mask", help="", nargs='+', type=int, default=[0, 1, 2, 3, 4, 5])
     parser.add_argument("-e", "--erase_previous", help="Erase previous generation result. Default: 'false'", default="true")
-    parser.add_argument("-i", "--target_index", help="Index of target. Default: 0", type=int, default=0)
-    parser.add_argument("-n", "--tries_count", help="Number of tries. Default: 10", type=int, default=100)
+    parser.add_argument("-i", "--target_index", help="Index of target. Default: 0", type=int, default=1)
+    parser.add_argument("-n", "--tries_count", help="Number of tries. Default: 10", type=int, default=10)
     parser.add_argument("-a", "--angle_diff", help="Angle difference between poses. Default: 5", type=float, default=7)
-    parser.add_argument("-l", "--len_diff", help="Lenght difference between poses, mm. Default: 2", type=float, default=2)
-    parser.add_argument("-p", "--prev_eps", help="Epsilon for previous params. Default: 0.005", type=float, default=0.01)
-    parser.add_argument("-f", "--future_eps", help="Epsilon for future params. Default: 0.0004", type=float, default=0.001)
+    parser.add_argument("-l", "--len_diff", help="Lenght difference between poses, mm. Default: 2", type=float, default=1)
+    parser.add_argument("-p", "--prev_eps", help="Epsilon for previous params. Default: 0.005", type=float, default=10)
+    parser.add_argument("-f", "--future_eps", help="Epsilon for future params. Default: 0.0004", type=float, default=10)
     parser.add_argument("-b", "--border", help="", type=int, default=-1)
     parser.add_argument("-b_e", "--border_eps", help="", type=float, default=0.01)
 
