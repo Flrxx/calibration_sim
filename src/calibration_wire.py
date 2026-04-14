@@ -302,31 +302,62 @@ def write_validation_dataset(model: hayati_model.HayatiModel):
     write_dataset(validation_dataset, "results/ARM95/validation_results.csv", model.fieldnames_options["test_result"], tolerance = ".3f")
     print("Done")
 
+def rate_poses_contributions(model: hayati_model.HayatiModel, i_target, num_tries, floor=0):
+    dataset = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
+    poses = np.array([elem for elem in dataset if elem[6] == i_target])
+    print(f"Start {len(poses)} poses")
+    param_num, param_letter_num = model.params_from_letters(model.error_list[i_target])
+
+    error_vector = np.zeros(shape=(len(poses), num_tries))
+    for try_num in range(num_tries):
+        new_dh = generate_real_dh(model)
+        model.change_real_dh(new_dh)
+        real_value = model.real_dh[param_num, param_letter_num]
+        initial_value = calibrate_single_param(model, poses).x[0]
+        initial_error = abs(real_value - initial_value)
+        
+        for pose_num in range(len(poses)):
+            poses_new = np.delete(poses, pose_num, axis=0)
+            new_value = calibrate_single_param(model, poses_new).x[0]
+            error_vector[pose_num, try_num] = initial_error - abs(real_value - new_value)
+    
+    error_median = np.median(error_vector, axis=1)
+
+    result_poses = np.array([pose for i, pose in enumerate(poses) if error_median[i] > floor])
+    print(f"Found {len(result_poses)} poses")
+    write_dataset(result_poses, "datasets/ARM95/wire/positive_contributions.csv", model.fieldnames_options["wire_contributions"], tolerance=".3f")
+
+
 def main(args):
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
     model = hayati_model.HayatiModel(config)
-    if args.is_real:
-        execute_calibration(model)
-        write_results(model)
-        write_validation_dataset(model)
-        data = read_dataset("results/ARM95/validation_results.csv", ['q1','q2','q3','q4','q5','q6','d_nom','d_est','d_encoder','diff'])
-        data_before = data[:, 6]
-        data_after = data[:, 7]
-        if args.draw:
-            plot_side_by_side_hist(data_before, data_after)
-    else:
-        make_many_calibration_attempts(model, args.num_of_tries, args.generate, args.draw)  # ,params_error
-
-
+    if args.mode == "generate":
+        if args.is_real:
+            execute_calibration(model)
+            write_results(model)
+            write_validation_dataset(model)
+            data = read_dataset("results/ARM95/validation_results.csv", ['q1','q2','q3','q4','q5','q6','d_nom','d_est','d_encoder','diff'])
+            data_before = data[:, 6]
+            data_after = data[:, 7]
+            if args.draw:
+                plot_side_by_side_hist(data_before, data_after)
+        else:
+            make_many_calibration_attempts(model, args.num_of_tries, args.generate, args.draw)  # ,params_error
+    elif args.mode == "rate":
+        rate_poses_contributions(model, args.i_target, args.num_of_tries, args.floor)
+    print("Done")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: src/config/ARM95_calibration.json", default="src/config/ARM95_calibration.json")
-    #parser.add_argument("-g", "--generate", help="Generate new real DH. Default: 'true'", default="true")
+    parser.add_argument("-m", "--mode", help="generate or rate", default="generate")
     parser.add_argument("--generate", action='store_true')
     parser.add_argument("--is_real", action='store_true')
     parser.add_argument("--draw", action='store_true')
     parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=1)
+    parser.add_argument("-i", "--i_target", help="", type=int, default=0)
+    parser.add_argument("-f", "--floor", help="", type=float, default=0.0)
+
     args = parser.parse_args()
     main(args)

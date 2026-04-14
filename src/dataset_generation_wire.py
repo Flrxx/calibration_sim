@@ -171,7 +171,7 @@ def _generate_batch(tries_count, model: hayati_model.HayatiModel, i_target, user
 
         if new_sample[0] is not None:
             single_contribution = calculate_contribution(model, new_sample)
-            single_coords = model.get_transition_matrix(new_sample, "nominal")[0:3, 3].reshape(1, 3)
+            single_coords = model.get_transition_matrix(new_sample, "nominal")[0:3, 3]
             similar_index = get_similar_index(new_sample, local_samples, angle_diff * DEG, single_coords, local_coords, len_diff / 1000)
             
             if similar_index is None:
@@ -207,7 +207,7 @@ def generate_single_layer(model: hayati_model.HayatiModel, i_target, user_joint_
     #old_bounds = bounds * abs(user_joint_mask - 1) + model.bounds * user_joint_mask
 
     tasks = []
-    for i in range(num_cores):
+    for i in range(min(num_cores, tries_count)):
         current_tries = chunk_size
         if current_tries > 0:
             copy_model = copy.deepcopy(model)
@@ -225,20 +225,38 @@ def generate_single_layer(model: hayati_model.HayatiModel, i_target, user_joint_
         
     print(f"Found {lenght} poses")
     
+
+    final_samples = np.array([]).reshape(0, 6)
+    final_contributions = np.array([]).reshape(0, len(model.error_list))
+    final_objective_values = np.array([]).reshape(0, 1)
+    final_coords = np.array([]).reshape(0, 3)
+
     if erase_previous == "false":
         previous_res = read_dataset(model.generation_output, model.fieldnames_options["wire_contributions"])
-        final_samples = (previous_res[:,0:6] * DEG)
-        final_contributions = previous_res[:,8:]
-        final_objective_values = previous_res[:, 7]
-        final_coords = np.zeros(shape = (len(final_samples), 3))
-        for i in range(len(final_samples)):
-            final_coords[i] = model.get_transition_matrix(final_samples[i], "nominal")[0:3, 3].reshape(1, 3)
+        # final_samples = (previous_res[:,0:6] * DEG)
+        # final_contributions = previous_res[:,8:]
+        # final_objective_values = previous_res[:, 7]
+        # final_coords = np.zeros(shape = (len(final_samples), 3))
+        # for i in range(len(final_samples)):
+        #     final_coords[i] = model.get_transition_matrix(final_samples[i], "nominal")[0:3, 3]
+
+        poses = [np.asarray(row) for row in previous_res[:,0:6] * DEG]
+        contributions = [np.asarray(row) for row in previous_res[:,8:]]
+        objecticve_values = [np.asarray(row) for row in previous_res[:, 7]]
+        coords = [model.get_transition_matrix(pose, "nominal")[0:3, 3] for pose in poses]
+
+        results.append([poses, contributions, objecticve_values, coords])
+        # results[0] += (previous_res[:,0:6] * DEG).tolist()
+        # results[1] += (previous_res[:,8:]).tolist()
+        # results[2] += 
+
 
     elif erase_previous == "true":
-        final_samples = np.array([]).reshape(0, 6)
-        final_contributions = np.array([]).reshape(0, len(model.error_list))
-        final_objective_values = np.array([]).reshape(0, 1)
-        final_coords = np.array([]).reshape(0, 3)
+        pass
+        # final_samples = np.array([]).reshape(0, 6)
+        # final_contributions = np.array([]).reshape(0, len(model.error_list))
+        # final_objective_values = np.array([]).reshape(0, 1)
+        # final_coords = np.array([]).reshape(0, 3)
     else:
         raise ValueError("Wrong erase_previous")
     
@@ -279,7 +297,6 @@ def get_similar_index(new_sample, samples, angle_delta, new_sample_coords, sampl
         return np.argmax(combined_mask)
     
     return None
-
 
 def generate_samples(model: hayati_model.HayatiModel, i_target: int, user_joint_mask, 
                      tries_count, prev_eps, future_eps, angle_diff, len_diff, erase_previous, border: int, border_eps: float):
@@ -339,29 +356,6 @@ def vary_joints(model: hayati_model.HayatiModel, user_joint_mask: Union[list, np
             high=active_bounds[:, 1], 
             size=(tries_count, num_active)
         )
-        # def wire_limits(angles):
-        #     # z limits
-        #     matrix = model.get_transition_matrix(angles, "nominal")
-        #     z_dir = matrix[0:3, 2]
-        #     scalar_z = np.vdot(z_dir, -model.zero_wire_direction)
-        #     alpha_z = acos(scalar_z)
-        #     angle_cons_z = np.array([alpha_z, model.angle_limit - alpha_z]) # so angle would fit
-
-        #     wire = matrix[0:3, 3] - model.zero_offset_nominal
-        #     wire_len = np.linalg.norm(wire) 
-        #     scalar_wire = np.vdot(-(wire / wire_len), z_dir)
-        #     alpha_wire = acos(scalar_wire)
-        #     angle_cons_wire = np.array([alpha_wire, model.angle_limit - alpha_wire]) # so angle would fit
-            
-        #     # wire limits        
-        #     len_cons = np.array([wire_len - model.wire_limits[0], model.wire_limits[1] - wire_len]) # so wire len would fit
-
-        #     scalar = np.vdot(wire / wire_len, model.zero_wire_direction)  # > 0 so wire stretch forward        
-        #     alpha = acos(scalar)
-        #     angle_cons = np.array([alpha, model.angle_limit - alpha]) # so angle would fit
-
-        #     return np.concatenate(([scalar_z], [scalar_wire], angle_cons_z, angle_cons_wire, [scalar], angle_cons, len_cons))
-    
         angles = model.zero_wire_angles.copy()
 
         for i in range(tries_count):
@@ -475,11 +469,11 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="src/config/ARM95_calibration.json")
     parser.add_argument("-m", "--mode", help="Selected mode: 'generation' or 'check'. Default: 'generation'", default="generation")
     parser.add_argument("-mask", "--user_joint_mask", help="", nargs='+', type=int, default=[0, 1, 2, 3, 4, 5])
-    parser.add_argument("-e", "--erase_previous", help="Erase previous generation result. Default: 'false'", default="true")
+    parser.add_argument("-e", "--erase_previous", help="Erase previous generation result. Default: 'false'", default="false")
     parser.add_argument("-i", "--target_index", help="Index of target. Default: 0", type=int, default=1)
-    parser.add_argument("-n", "--tries_count", help="Number of tries. Default: 10", type=int, default=10)
+    parser.add_argument("-n", "--tries_count", help="Number of tries. Default: 10", type=int, default=0)
     parser.add_argument("-a", "--angle_diff", help="Angle difference between poses. Default: 5", type=float, default=7)
-    parser.add_argument("-l", "--len_diff", help="Lenght difference between poses, mm. Default: 2", type=float, default=1)
+    parser.add_argument("-l", "--len_diff", help="Lenght difference between poses, mm. Default: 2", type=float, default=50)
     parser.add_argument("-p", "--prev_eps", help="Epsilon for previous params. Default: 0.005", type=float, default=10)
     parser.add_argument("-f", "--future_eps", help="Epsilon for future params. Default: 0.0004", type=float, default=10)
     parser.add_argument("-b", "--border", help="", type=int, default=-1)
