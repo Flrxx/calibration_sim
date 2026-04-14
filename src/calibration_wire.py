@@ -302,16 +302,14 @@ def write_validation_dataset(model: hayati_model.HayatiModel):
     write_dataset(validation_dataset, "results/ARM95/validation_results.csv", model.fieldnames_options["test_result"], tolerance = ".3f")
     print("Done")
 
-def rate_poses_contributions(model: hayati_model.HayatiModel, i_target, num_tries, floor=0):
-    dataset = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
-    poses = np.array([elem for elem in dataset if elem[6] == i_target])
-    print(f"Start {len(poses)} poses")
+def _rate_batch_worker(model, i_target, poses, num_tries_in_batch):
     param_num, param_letter_num = model.params_from_letters(model.error_list[i_target])
+    batch_error_vector = np.zeros(shape=(len(poses), num_tries_in_batch))
 
-    error_vector = np.zeros(shape=(len(poses), num_tries))
-    for try_num in range(num_tries):
+    for try_num in range(num_tries_in_batch):
         new_dh = generate_real_dh(model)
         model.change_real_dh(new_dh)
+        
         real_value = model.real_dh[param_num, param_letter_num]
         initial_value = calibrate_single_param(model, poses).x[0]
         initial_error = abs(real_value - initial_value)
@@ -319,14 +317,39 @@ def rate_poses_contributions(model: hayati_model.HayatiModel, i_target, num_trie
         for pose_num in range(len(poses)):
             poses_new = np.delete(poses, pose_num, axis=0)
             new_value = calibrate_single_param(model, poses_new).x[0]
-            error_vector[pose_num, try_num] = initial_error - abs(real_value - new_value)
+            
+            batch_error_vector[pose_num, try_num] = initial_error - abs(real_value - new_value)
+            
+    return batch_error_vector
+
+def rate_poses_contributions(model, i_target, num_tries, floor=0):
+    dataset = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
+    poses = np.array([elem for elem in dataset if elem[6] == i_target])
+    print(f"Starting analysis of {len(poses)} poses across {num_tries} tries...")
+
+    num_cores = cpu_count()
+    chunk_size = num_tries // num_cores
+    remainder = num_tries % num_cores
+    
+    tasks = []
+    for i in range(num_cores):
+        current_batch_size = chunk_size + (1 if i < remainder else 0)
+        if current_batch_size > 0:
+            tasks.append((model, i_target, poses, current_batch_size))
+
+    with Pool(processes=num_cores) as pool:
+        results = pool.starmap(_rate_batch_worker, tasks)
+
+    error_vector = np.hstack(results)
     
     error_median = np.median(error_vector, axis=1)
-
-    result_poses = np.array([pose for i, pose in enumerate(poses) if error_median[i] > floor])
-    print(f"Found {len(result_poses)} poses")
-    write_dataset(result_poses, "datasets/ARM95/wire/positive_contributions.csv", model.fieldnames_options["wire_contributions"], tolerance=".3f")
-
+    result_poses = poses[error_median > floor]
+    
+    print(f"Found {len(result_poses)} poses with positive contribution")
+    write_dataset(result_poses, "datasets/ARM95/wire/positive_contributions.csv", 
+                  model.fieldnames_options["wire_contributions"], tolerance=".3f")
+    
+    return result_poses
 
 def main(args):
     with open(args.config, 'r') as config_file:
