@@ -61,7 +61,7 @@ def calculate_optimal_position(model: hayati_model.HayatiModel, i_target: int, a
     
     def objective(angles):
         output = calculate_contribution(model, angles)
-        return -(output[i_target]**2         -   1 * np.max(output[0:i_target]**2, initial=0.0001) - 5 * np.max(output[i_target + 1:]**2, initial=0.0001))  #- max(np.concatenate([output[0:i_target], output[i_target + 1: border]]))**2
+        return -(output[i_target]**2   -   1 * np.max(output[0:i_target]**2, initial=0.0001) / max(len(output[0:i_target]), 1) - 5 * np.max(output[i_target + 1:]**2, initial=0.0001) / max(len(output[i_target + 1:]), 1))  #- max(np.concatenate([output[0:i_target], output[i_target + 1: border]]))**2
 
     cons = []
     if border == -1:
@@ -142,12 +142,13 @@ def calculate_optimal_position(model: hayati_model.HayatiModel, i_target: int, a
     else:
         return([None for _ in range(6)], None)
 
-def _generate_batch(tries_count, model: hayati_model.HayatiModel, i_target, user_joint_mask, bounds, prev_eps, future_eps, angle_diff, border: int, border_eps: float):
+def _generate_batch(tries_count, model: hayati_model.HayatiModel, i_target, user_joint_mask, bounds, prev_eps, future_eps, angle_diff, len_diff, border: int, border_eps: float):
     np.random.seed()
     
     local_samples = []
     local_contributions = []
     local_objective_values = []
+    local_coords = []
 
     num_active = len(user_joint_mask)
 
@@ -170,24 +171,27 @@ def _generate_batch(tries_count, model: hayati_model.HayatiModel, i_target, user
 
         if new_sample[0] is not None:
             single_contribution = calculate_contribution(model, new_sample)
-            similar_index = get_similar_index(local_samples, new_sample, angle_diff * DEG)
+            single_coords = model.get_transition_matrix(new_sample, "nominal")[0:3, 3]
+            similar_index = get_similar_index(new_sample, local_samples, angle_diff * DEG, single_coords, local_coords, len_diff / 1000)
             
             if similar_index is None:
                 local_samples.append(new_sample.copy())
                 local_contributions.append(single_contribution.copy())
                 local_objective_values.append(objective_value)
+                local_coords.append(single_coords)
             # elif abs(single_contribution[i_target]) > abs(local_contributions[similar_index][i_target]):
             #     local_samples[similar_index] = new_sample.copy()
             #     local_contributions[similar_index] = single_contribution.copy()
             
-            elif abs(objective_value) < abs(local_objective_values[similar_index]):
+            elif objective_value < local_objective_values[similar_index]: #abs()
                 local_samples[similar_index] = new_sample.copy()
                 local_contributions[similar_index] = single_contribution.copy()
                 local_objective_values[similar_index] = objective_value
+                local_coords[similar_index] = single_coords
 
-    return local_samples, local_contributions, local_objective_values
+    return local_samples, local_contributions, local_objective_values, local_coords
 
-def generate_single_layer(model: hayati_model.HayatiModel, i_target, user_joint_mask, tries_count, prev_eps, future_eps, angle_diff, erase_previous, border: int, border_eps: float):
+def generate_single_layer(model: hayati_model.HayatiModel, i_target, user_joint_mask, tries_count, prev_eps, future_eps, angle_diff, len_diff, erase_previous, border: int, border_eps: float):
     num_cores = cpu_count()
     #chunk_size = tries_count // num_cores
     chunk_size = max(1, (tries_count // num_cores))
@@ -209,7 +213,7 @@ def generate_single_layer(model: hayati_model.HayatiModel, i_target, user_joint_
             copy_model = copy.deepcopy(model)
             tasks.append((
                 current_tries, copy_model, i_target, user_joint_mask, bounds, 
-                prev_eps, future_eps, angle_diff, border, border_eps
+                prev_eps, future_eps, angle_diff, len_diff, border, border_eps
             ))        
 
     with Pool(processes=num_cores) as pool:
@@ -252,20 +256,23 @@ def generate_single_layer(model: hayati_model.HayatiModel, i_target, user_joint_
 
     return {"samples": final_samples, "contributions": final_contributions, "objective_values": final_objective_values}
 
-def get_similar_index(samples, new_sample: np.ndarray, delta):     
+def get_similar_index(new_sample: np.ndarray, samples, angle_delta,  new_sample_coords, samples_coords: np.ndarray, len_delta):     
     if len(samples) == 0:
         return None
-    diffs = np.abs(samples - new_sample)
     
-    is_similar_mask = np.all(diffs <= delta, axis=1)
-    if not np.any(is_similar_mask):
+    diffs_angle = np.abs(samples - new_sample)
+    diffs_len = np.abs(samples_coords - new_sample_coords)
+    
+    is_similar_mask_angle = np.all(diffs_angle <= angle_delta, axis=1)
+    is_similar_mask_len = np.all(diffs_len <= len_delta, axis=1)
+    if (not np.any(is_similar_mask_angle)) and (not np.any(is_similar_mask_len)):
         return None
     
-    return np.argmax(is_similar_mask)
+    return np.argmax(is_similar_mask_angle)
 
 def generate_samples(model: hayati_model.HayatiModel, i_target: int, user_joint_mask, 
-                     tries_count, prev_eps, future_eps, angle_diff, erase_previous, border: int, border_eps: float):
-    res = generate_single_layer(model, i_target, user_joint_mask, tries_count, prev_eps, future_eps, angle_diff, erase_previous, border, border_eps)
+                     tries_count, prev_eps, future_eps, angle_diff, len_diff, erase_previous, border: int, border_eps: float):
+    res = generate_single_layer(model, i_target, user_joint_mask, tries_count, prev_eps, future_eps, angle_diff, len_diff, erase_previous, border, border_eps)
     printable_res = [np.concatenate((s / DEG, [i_target, o], c.flatten())).tolist() for s, c, o in zip(res["samples"], res["contributions"], res["objective_values"])]
     printable_res.sort(key = lambda x: x[7 ]) # + i_target
     write_dataset(printable_res, model.generation_output, model.fieldnames_options["wire_contributions"], tolerance = ".3f")
@@ -436,7 +443,7 @@ def main(args):
 
     if args.mode == 'generation':
         generate_samples(model, args.target_index, np.array(args.user_joint_mask), args.tries_count, 
-                            args.prev_eps, args.future_eps, args.angle_diff, args.erase_previous, args.border, args.border_eps) 
+                            args.prev_eps, args.future_eps, args.angle_diff, args.len_diff, args.erase_previous, args.border, args.border_eps) 
     elif args.mode == 'check':
         #angles = np.array(args.position) * DEG
         vary_joints(model, np.array(args.user_joint_mask), args.tries_count) #args.user_joint_mask)
@@ -461,6 +468,7 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--target_index", help="Index of target. Default: 0", type=int, default=0)
     parser.add_argument("-n", "--tries_count", help="Number of tries. Default: 10", type=int, default=100)
     parser.add_argument("-a", "--angle_diff", help="Angle difference between poses. Default: 5", type=float, default=7)
+    parser.add_argument("-l", "--len_diff", help="Lenght difference between poses, mm. Default: 2", type=float, default=2)
     parser.add_argument("-p", "--prev_eps", help="Epsilon for previous params. Default: 0.005", type=float, default=0.01)
     parser.add_argument("-f", "--future_eps", help="Epsilon for future params. Default: 0.0004", type=float, default=0.001)
     parser.add_argument("-b", "--border", help="", type=int, default=-1)
