@@ -324,7 +324,7 @@ def _rate_batch_worker(model: hayati_model.HayatiModel, i_target, zero_index, po
             new_error_value = new_error[i_target]
             #print(new_error_value)
             
-            batch_error_vector[pose_num, try_num] = initial_error_value - new_error_value
+            batch_error_vector[pose_num, try_num] = new_error_value - initial_error_value
             #print(f"Error values: {initial_error_value}, {new_error_value}")
             copy_model.reset_estimated_dh()
             
@@ -356,10 +356,14 @@ def rate_poses_contributions(model, i_target, num_tries, floor=0):
     error_vector = np.hstack(results)
     
     error_median = np.median(error_vector, axis=1) * 1000
-    print(error_median)
-    result_poses = poses[error_median > floor]
+    # viz = {i: value for i, value in enumerate(error_median)}
+    # viz_sorted = dict(sorted(viz.items(), key=lambda item: item[1]))
+    # print(viz_sorted.values())
+    # print(viz_sorted.keys())
+    # print(np.sort(error_median))
+    result_poses = poses[error_median < floor]
     result_poses[:, 0:6] /= DEG
-    print(result_poses)
+    #print(result_poses)
     
     print(f"Found {len(result_poses)} poses with positive contribution")
     write_dataset(result_poses, "datasets/ARM95/wire/positive_contributions.csv", 
