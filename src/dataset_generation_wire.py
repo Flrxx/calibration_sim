@@ -61,7 +61,7 @@ def calculate_optimal_position(model: hayati_model.HayatiModel, i_target: int, a
     
     def objective(angles):
         output = calculate_contribution(model, angles)
-        return -(output[i_target]**2   -   1 * np.max(output[0:i_target]**2, initial=0.0001) / max(len(output[0:i_target]), 1) - 10 * np.max(output[i_target + 1:]**2, initial=0.0001) / max(len(output[i_target + 1:]), 1))  #- max(np.concatenate([output[0:i_target], output[i_target + 1: border]]))**2
+        return -(output[i_target]**2   -   1 * np.max(output[0:i_target]**2, initial=0.0001) - 5 * np.max(output[i_target + 1:]**2, initial=0.0001))  #/ max(len(output[i_target + 1:]), 1)
 
     cons = []
     if border == -1:

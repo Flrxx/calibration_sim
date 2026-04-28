@@ -330,7 +330,7 @@ def _rate_batch_worker(model: hayati_model.HayatiModel, i_target, zero_index, po
             
     return batch_error_vector
 
-def rate_poses_contributions(model, i_target, num_tries, floor=0):
+def rate_poses_contributions(model, i_target, num_tries, floor_l, floor_h):
     dataset = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
     poses = dataset[dataset[:, 6] == i_target]
     poses[:, 0:6] *= DEG
@@ -354,14 +354,19 @@ def rate_poses_contributions(model, i_target, num_tries, floor=0):
         results = pool.starmap(_rate_batch_worker, tasks)
 
     error_vector = np.hstack(results)
+
+    # for elem in error_vector:
+    #     print(elem)
     
     error_median = np.median(error_vector, axis=1) * 1000
     # viz = {i: value for i, value in enumerate(error_median)}
     # viz_sorted = dict(sorted(viz.items(), key=lambda item: item[1]))
     # print(viz_sorted.values())
     # print(viz_sorted.keys())
-    # print(np.sort(error_median))
-    result_poses = poses[error_median < floor]
+    print((error_median))
+    result_poses_l = poses[ error_median < floor_l ]
+    result_poses_h = poses[error_median > floor_h ]
+    result_poses = np.concatenate([result_poses_l, result_poses_h])
     result_poses[:, 0:6] /= DEG
     #print(result_poses)
     
@@ -388,7 +393,7 @@ def main(args):
         else:
             make_many_calibration_attempts(model, args.num_of_tries, args.generate, args.draw)  # ,params_error
     elif args.mode == "rate":
-        rate_poses_contributions(model, args.i_target, args.num_of_tries, args.floor)
+        rate_poses_contributions(model, args.i_target, args.num_of_tries, args.floor_l, args.floor_h)
     print("Done")
 
 if __name__ == "__main__":
@@ -400,7 +405,8 @@ if __name__ == "__main__":
     parser.add_argument("--draw", action='store_true')
     parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=20)
     parser.add_argument("-i", "--i_target", help="", type=int, default=1)
-    parser.add_argument("-f", "--floor", help="", type=float, default=0.0)
+    parser.add_argument("-f_l", "--floor_l", help="", type=float, default=0.0)
+    parser.add_argument("-f_h", "--floor_h", help="", type=float, default=0.0)
 
     args = parser.parse_args()
     main(args)
