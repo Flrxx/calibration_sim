@@ -299,36 +299,34 @@ def write_validation_dataset(model: hayati_model.HayatiModel):
     write_dataset(validation_dataset, "results/ARM95/validation_results.csv", model.fieldnames_options["test_result"], tolerance = ".3f")
     print("Done")
 
-def _rate_batch_worker(model: hayati_model.HayatiModel, i_target, zero_index, poses_len, num_tries_in_batch):
+def _rate_batch_worker(model: hayati_model.HayatiModel, dataset, i_target, pose_num, num_tries_in_batch):
     copy_model = copy.deepcopy(model)
-    param_num, param_letter_num = copy_model.params_from_letters(copy_model.error_list[i_target])
-    batch_error_vector = np.zeros(shape=(poses_len, num_tries_in_batch))
+    #param_num, param_letter_num = copy_model.params_from_letters(copy_model.error_list[i_target])
+    #batch_error_vector = np.zeros(shape=(poses_len, num_tries_in_batch))
 
+    error = 0
     for try_num in range(num_tries_in_batch):
         new_dh = generate_real_dh(copy_model)
         copy_model.change_real_dh(new_dh)
-        dataset = measure_all_distances(copy_model)
+        dataset = measure_all_distances(copy_model, dataset)
         
-        real_value = copy_model.real_dh[param_num, param_letter_num]
+        #real_value = copy_model.real_dh[param_num, param_letter_num]
         #print(real_value * 1000)
-        _, initial_error, _, _ = execute_calibration(copy_model, dataset=dataset)
+        
         #print(f"DH: { copy_model.nominal_dh[param_num, param_letter_num] * 1000}, {copy_model.estimated_dh[param_num, param_letter_num] * 1000}")
-
+        _, initial_error, _, _ = execute_calibration(copy_model, dataset=dataset)
         copy_model.reset_estimated_dh()
         initial_error_value = initial_error[i_target]
         
-        for pose_num in range(poses_len):
-            dataset_new = np.delete(dataset, zero_index + pose_num, axis=0)
-            _, new_error, _, _ = execute_calibration(copy_model, dataset=dataset_new)
-            #print(new_error)
-            new_error_value = new_error[i_target]
-            #print(new_error_value)
+        dataset_new = np.delete(dataset, pose_num, axis=0)
+        _, new_error, _, _ = execute_calibration(copy_model, dataset=dataset_new)
+        copy_model.reset_estimated_dh()
+        new_error_value = new_error[i_target]
+
+        error += new_error_value - initial_error_value
             
-            batch_error_vector[pose_num, try_num] = new_error_value - initial_error_value
-            #print(f"Error values: {initial_error_value}, {new_error_value}")
-            copy_model.reset_estimated_dh()
             
-    return batch_error_vector
+    return error / num_tries_in_batch
 
 def rate_poses_contributions(model, i_target, num_tries, floor_l, floor_h):
     dataset = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
@@ -344,29 +342,37 @@ def rate_poses_contributions(model, i_target, num_tries, floor_l, floor_h):
     remainder = num_tries % num_cores
     
     tasks = []
-    for i in range(num_cores):
-        current_batch_size = chunk_size + (1 if i < remainder else 0)
-         
-        if current_batch_size > 0:
-            tasks.append((model, i_target, zero_index, len(poses), current_batch_size))
+    for pose_num in range(len(poses) - 1, -1, -1):
+        for i in range(num_cores):
+            current_batch_size = chunk_size + (1 if i < remainder else 0)
+            if current_batch_size > 0:
+                tasks.append((model, dataset, i_target, zero_index + pose_num, current_batch_size))
 
-    with Pool(processes=num_cores) as pool:
-        results = pool.starmap(_rate_batch_worker, tasks)
+        with Pool(processes=num_cores) as pool:
+            results = pool.starmap(_rate_batch_worker, tasks)
 
-    error_vector = np.hstack(results)
+        error_vector = np.hstack(results)
+        error_median = np.median(error_vector) #* 1000
+        if error_median < 0:
+            dataset = np.delete(dataset, zero_index + pose_num, axis=0)
+            print(f"Deleted {pose_num} pose")
+        else:
+            print(f"Saved {pose_num} pose")
 
     # for elem in error_vector:
     #     print(elem)
     
-    error_median = np.median(error_vector, axis=1) * 1000
+    # error_median = np.median(error_vector, axis=1) * 1000
     # viz = {i: value for i, value in enumerate(error_median)}
     # viz_sorted = dict(sorted(viz.items(), key=lambda item: item[1]))
     # print(viz_sorted.values())
     # print(viz_sorted.keys())
-    print((error_median))
-    result_poses_l = poses[ error_median < floor_l ]
-    result_poses_h = poses[error_median > floor_h ]
-    result_poses = np.concatenate([result_poses_l, result_poses_h])
+    # print((error_median))
+    # result_poses_l = poses[ error_median < floor_l ]
+    # result_poses_h = poses[error_median > floor_h ]
+    # result_poses = np.concatenate([result_poses_l, result_poses_h])
+
+    result_poses = dataset
     result_poses[:, 0:6] /= DEG
     #print(result_poses)
     
@@ -403,7 +409,7 @@ if __name__ == "__main__":
     parser.add_argument("--generate", action='store_true')
     parser.add_argument("--is_real", action='store_true')
     parser.add_argument("--draw", action='store_true')
-    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=20)
+    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=100)
     parser.add_argument("-i", "--i_target", help="", type=int, default=1)
     parser.add_argument("-f_l", "--floor_l", help="", type=float, default=0.0)
     parser.add_argument("-f_h", "--floor_h", help="", type=float, default=0.0)
