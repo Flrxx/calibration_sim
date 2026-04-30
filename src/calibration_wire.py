@@ -299,12 +299,107 @@ def write_validation_dataset(model: hayati_model.HayatiModel):
     write_dataset(validation_dataset, "results/ARM95/validation_results.csv", model.fieldnames_options["test_result"], tolerance = ".3f")
     print("Done")
 
-def _rate_batch_worker(model, dataset, i_target, pose_num, num_tries_in_batch):
+def calibrate_list_of_dh(model: hayati_model.HayatiModel, dh_list, dataset, est_dh_list):
+    height =  model.estimated_dh.shape[0]
+    #est_dh_list = np.zeros(shape=(len(dh_list) * height, model.estimated_dh.shape[1]))
+    errors_list = np.zeros(len=len(model.error_list))
+    for i, new_dh in enumerate(dh_list):
+        model.change_real_dh(new_dh)
+        current_dataset = measure_all_distances(model, dataset)
+        _, errors, _, _ = execute_calibration(model, dataset=current_dataset)
+        errors_list += errors
+        est_dh_list[i * height: (i+1) * height + 1, :] = model.estimated_dh
+
+    return errors/len(dh_list)
+
+def rate_poses_contributions_optimized(model: hayati_model.HayatiModel, i_target, num_tries, floor_l, floor_h):
+    dataset_orig = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
+    dataset_orig[:, 0:6] *= DEG
+
+    poses_mask = dataset_orig[:, 6] == i_target
+    start_poses_mask = dataset_orig[:, 6] != i_target and dataset_orig[:, 6] > 0
+
+    start_poses = dataset_orig[start_poses_mask]
+    target_poses = dataset_orig[poses_mask]
+
+    #target_poses[:, 0:6] *= DEG # Assuming DEG is defined globally
+    dataset = measure_all_distances(model, dataset_orig)
+    
+    # Find the starting index of this parameter's poses in the full dataset
+    zero_index = np.where(poses_mask)[0][0]
+
+    num_cores = cpu_count()
+    chunk_size = num_tries // num_cores
+    remainder = num_tries % num_cores
+    
+    # Open the Pool ONCE outside the loop
+    is_changed = 1
+    while is_changed == 1:
+        print("*" * 10)
+        print(f"Starting analysis of {len(target_poses)} poses across {num_tries} tries...")
+        height =  model.estimated_dh.shape[0]
+        dh_array = np.zeros(shape=(num_tries * height, model.estimated_dh.shape[1]))
+        for i in range(num_tries):
+            dh_array = dh_array[i * height: (i+1) * height + 1, :] = generate_real_dh
+        est_dh_array = np.zeros(shape=(num_tries * model.estimated_dh.shape[0], model.estimated_dh.shape[1]))
+        initial_errors = calibrate_list_of_dh(model, i_target, dataset_orig, est_dh_array)
+
+        is_changed = 0
+        with Pool(processes=num_cores) as pool:
+            for pose_num in range(len(target_poses) - 1, -1, -1):
+                tasks = [] # Reset tasks for the current pose
+                
+                i = 0
+                for i in range(num_cores):
+                    current_batch_size = chunk_size + (1 if i < remainder else 0)
+                    if current_batch_size > 0:
+                        tasks.append((model, dataset, i_target, zero_index + pose_num, current_batch_size))
+
+                # Execute parallel batches
+                results = pool.starmap(_rate_batch_worker, tasks)
+                
+                # results is a list of lists. Flatten it to get all raw trial data.
+                error_vector = np.concatenate([x[0] for x in results])
+                new_error_vector = np.concatenate([x[1] for x in results])
+                #initial_error_vector = np.concatenate([x[2] for x in results])
+                
+                # Calculate the true median
+                error_median = np.median(error_vector) 
+                # print(f"Delta value {error_median}")
+                # initial_median = np.median(initial_error_vector) 
+                # print(f"Initial value {initial_median}")
+                new_median = np.median(new_error_vector) 
+                print(f"New value {new_median:.3f}")
+                
+
+                if error_median > 0.005:
+                    dataset = np.delete(dataset, zero_index + pose_num, axis=0)
+                    target_poses = np.delete(target_poses, pose_num, axis=0)
+                    print(f"Deleted pose index {pose_num}")
+                    is_changed = 1
+                else:
+                    print(f"Saved pose index {pose_num}")
+            
+    #result_poses[:, 0:6] /= DEG
+    
+    print(f"Found {len(target_poses)} poses with positive contribution")
+    
+    write_dataset(
+        target_poses, 
+        "datasets/ARM95/wire/positive_contributions.csv", 
+        model.fieldnames_options["wire_contributions"], 
+        tolerance=".3f"
+    )
+    
+    return target_poses
+
+
+def _rate_batch_worker(model: hayati_model.HayatiModel, dataset, i_target, pose_num, num_tries_in_batch):
     # Deepcopy once per batch to avoid race conditions across processes
     copy_model = copy.deepcopy(model)
     batch_results = []
     new_error_list = []
-    initial_error_list = []
+    #initial_error_list = []
 
     for _ in range(num_tries_in_batch):
         # Generate new noise/DH
@@ -326,64 +421,70 @@ def _rate_batch_worker(model, dataset, i_target, pose_num, num_tries_in_batch):
         new_error_value = new_error[i_target]
 
         new_error_list.append(new_error_value)
-        initial_error_list.append(initial_error_value)
+        #initial_error_list.append(initial_error_value)
 
         # Append the raw difference
         batch_results.append(new_error_value - initial_error_value)
             
-    return batch_results, new_error_list, initial_error_list
+    return batch_results, new_error_list#, initial_error_list
 
 def rate_poses_contributions(model, i_target, num_tries, floor_l, floor_h):
     dataset_orig = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
     poses_mask = dataset_orig[:, 6] == i_target
     poses = dataset_orig[poses_mask]
+    dataset_orig[:, 0:6] *= DEG
+
     
     #poses[:, 0:6] *= DEG # Assuming DEG is defined globally
     dataset = measure_all_distances(model, dataset_orig)
     
     # Find the starting index of this parameter's poses in the full dataset
     zero_index = np.where(poses_mask)[0][0]
-    
-    print(f"Starting analysis of {len(poses)} poses across {num_tries} tries...")
 
     num_cores = cpu_count()
     chunk_size = num_tries // num_cores
     remainder = num_tries % num_cores
     
     # Open the Pool ONCE outside the loop
-    with Pool(processes=num_cores) as pool:
-        for pose_num in range(len(poses) - 1, -1, -1):
-            tasks = [] # Reset tasks for the current pose
-            
-            i = 0
-            for i in range(num_cores):
-                current_batch_size = chunk_size + (1 if i < remainder else 0)
-                if current_batch_size > 0:
-                    tasks.append((model, dataset, i_target, zero_index + pose_num, current_batch_size))
+    is_changed = 1
+    while is_changed == 1:
+        print("*" * 10)
+        print(f"Starting analysis of {len(poses)} poses across {num_tries} tries...")
+        is_changed = 0
+        with Pool(processes=num_cores) as pool:
+            for pose_num in range(len(poses) - 1, -1, -1):
+                tasks = [] # Reset tasks for the current pose
+                
+                i = 0
+                for i in range(num_cores):
+                    current_batch_size = chunk_size + (1 if i < remainder else 0)
+                    if current_batch_size > 0:
+                        tasks.append((model, dataset, i_target, zero_index + pose_num, current_batch_size))
 
-            # Execute parallel batches
-            results = pool.starmap(_rate_batch_worker, tasks)
-            
-            # results is a list of lists. Flatten it to get all raw trial data.
-            error_vector = np.concatenate([x[0] for x in results])
-            new_error_vector = np.concatenate([x[1] for x in results])
-            initial_error_vector = np.concatenate([x[2] for x in results])
-            
-            # Calculate the true median
-            error_median = np.median(error_vector) 
-            print(f"Delta value {error_median}")
-            initial_median = np.median(initial_error_vector) 
-            print(f"Initial value {initial_median}")
-            new_median = np.median(new_error_vector) 
-            print(f"New value {new_median}")
-            
+                # Execute parallel batches
+                results = pool.starmap(_rate_batch_worker, tasks)
+                
+                # results is a list of lists. Flatten it to get all raw trial data.
+                error_vector = np.concatenate([x[0] for x in results])
+                new_error_vector = np.concatenate([x[1] for x in results])
+                #initial_error_vector = np.concatenate([x[2] for x in results])
+                
+                # Calculate the true median
+                error_median = np.median(error_vector) 
+                # print(f"Delta value {error_median}")
+                # initial_median = np.median(initial_error_vector) 
+                # print(f"Initial value {initial_median}")
+                new_median = np.median(new_error_vector) 
+                print(f"New value {new_median:.3f}")
+                
 
-            if error_median > 0:
-                dataset = np.delete(dataset, zero_index + pose_num, axis=0)
-                poses = np.delete(poses, pose_num, axis=0)
-                print(f"Deleted pose index {pose_num}")
-            else:
-                print(f"Saved pose index {pose_num}")
+                if error_median > 0.005:
+                    dataset = np.delete(dataset, zero_index + pose_num, axis=0)
+                    poses = np.delete(poses, pose_num, axis=0)
+                    print(f"Deleted pose index {pose_num}")
+                    is_changed = 1
+                else:
+                    print(f"Saved pose index {pose_num}")
             
 
     result_poses = poses

@@ -325,9 +325,9 @@ def measure_real_distance(model: hayati_model.HayatiModel, angles: Union[list, n
     return distance
 
 def measure_all_distances(model: hayati_model.HayatiModel, dataset=[]):
-    #if len(dataset) == 0:
-    dataset = read_dataset(model.contribution_dataset, model.fieldnames_options['wire_contributions'])[:, 0:8]
-    dataset[:, 0:6] *= DEG
+    if len(dataset) == 0:
+        dataset = read_dataset(model.contribution_dataset, model.fieldnames_options['wire_contributions'])[:, 0:8]
+        dataset[:, 0:6] *= DEG
     mask = dataset[:, 6] >= 0
     dataset = dataset[mask]
     for sample in dataset:
