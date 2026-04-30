@@ -303,6 +303,8 @@ def _rate_batch_worker(model, dataset, i_target, pose_num, num_tries_in_batch):
     # Deepcopy once per batch to avoid race conditions across processes
     copy_model = copy.deepcopy(model)
     batch_results = []
+    new_error_list = []
+    initial_error_list = []
 
     for _ in range(num_tries_in_batch):
         # Generate new noise/DH
@@ -323,18 +325,21 @@ def _rate_batch_worker(model, dataset, i_target, pose_num, num_tries_in_batch):
         copy_model.reset_estimated_dh()
         new_error_value = new_error[i_target]
 
+        new_error_list.append(new_error_value)
+        initial_error_list.append(initial_error_value)
+
         # Append the raw difference
         batch_results.append(new_error_value - initial_error_value)
             
-    return batch_results
+    return batch_results, new_error_list, initial_error_list
 
 def rate_poses_contributions(model, i_target, num_tries, floor_l, floor_h):
-    dataset = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
-    poses_mask = dataset[:, 6] == i_target
-    poses = dataset[poses_mask]
+    dataset_orig = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
+    poses_mask = dataset_orig[:, 6] == i_target
+    poses = dataset_orig[poses_mask]
     
-    poses[:, 0:6] *= DEG # Assuming DEG is defined globally
-    dataset = measure_all_distances(model)
+    #poses[:, 0:6] *= DEG # Assuming DEG is defined globally
+    dataset = measure_all_distances(model, dataset_orig)
     
     # Find the starting index of this parameter's poses in the full dataset
     zero_index = np.where(poses_mask)[0][0]
@@ -350,6 +355,7 @@ def rate_poses_contributions(model, i_target, num_tries, floor_l, floor_h):
         for pose_num in range(len(poses) - 1, -1, -1):
             tasks = [] # Reset tasks for the current pose
             
+            i = 0
             for i in range(num_cores):
                 current_batch_size = chunk_size + (1 if i < remainder else 0)
                 if current_batch_size > 0:
@@ -359,19 +365,29 @@ def rate_poses_contributions(model, i_target, num_tries, floor_l, floor_h):
             results = pool.starmap(_rate_batch_worker, tasks)
             
             # results is a list of lists. Flatten it to get all raw trial data.
-            error_vector = np.concatenate(results)
+            error_vector = np.concatenate([x[0] for x in results])
+            new_error_vector = np.concatenate([x[1] for x in results])
+            initial_error_vector = np.concatenate([x[2] for x in results])
             
             # Calculate the true median
             error_median = np.median(error_vector) 
+            print(f"Delta value {error_median}")
+            initial_median = np.median(initial_error_vector) 
+            print(f"Initial value {initial_median}")
+            new_median = np.median(new_error_vector) 
+            print(f"New value {new_median}")
             
-            if error_median < 0:
+
+            if error_median > 0:
                 dataset = np.delete(dataset, zero_index + pose_num, axis=0)
+                poses = np.delete(poses, pose_num, axis=0)
                 print(f"Deleted pose index {pose_num}")
             else:
                 print(f"Saved pose index {pose_num}")
+            
 
-    result_poses = dataset
-    result_poses[:, 0:6] /= DEG
+    result_poses = poses
+    #result_poses[:, 0:6] /= DEG
     
     print(f"Found {len(result_poses)} poses with positive contribution")
     
@@ -411,7 +427,7 @@ if __name__ == "__main__":
     parser.add_argument("--generate", action='store_true')
     parser.add_argument("--is_real", action='store_true')
     parser.add_argument("--draw", action='store_true')
-    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=100)
+    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=3000)
     parser.add_argument("-i", "--i_target", help="", type=int, default=1)
     parser.add_argument("-f_l", "--floor_l", help="", type=float, default=0.0)
     parser.add_argument("-f_h", "--floor_h", help="", type=float, default=0.0)
