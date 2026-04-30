@@ -299,41 +299,45 @@ def write_validation_dataset(model: hayati_model.HayatiModel):
     write_dataset(validation_dataset, "results/ARM95/validation_results.csv", model.fieldnames_options["test_result"], tolerance = ".3f")
     print("Done")
 
-def _rate_batch_worker(model: hayati_model.HayatiModel, dataset, i_target, pose_num, num_tries_in_batch):
+def _rate_batch_worker(model, dataset, i_target, pose_num, num_tries_in_batch):
+    # Deepcopy once per batch to avoid race conditions across processes
     copy_model = copy.deepcopy(model)
-    #param_num, param_letter_num = copy_model.params_from_letters(copy_model.error_list[i_target])
-    #batch_error_vector = np.zeros(shape=(poses_len, num_tries_in_batch))
+    batch_results = []
 
-    error = 0
-    for try_num in range(num_tries_in_batch):
+    for _ in range(num_tries_in_batch):
+        # Generate new noise/DH
         new_dh = generate_real_dh(copy_model)
         copy_model.change_real_dh(new_dh)
-        dataset = measure_all_distances(copy_model, dataset)
         
-        #real_value = copy_model.real_dh[param_num, param_letter_num]
-        #print(real_value * 1000)
+        # We assume measure_all_distances returns a new array and doesn't mutate dataset in-place
+        current_dataset = measure_all_distances(copy_model, dataset)
         
-        #print(f"DH: { copy_model.nominal_dh[param_num, param_letter_num] * 1000}, {copy_model.estimated_dh[param_num, param_letter_num] * 1000}")
-        _, initial_error, _, _ = execute_calibration(copy_model, dataset=dataset)
+        # Calculate initial error
+        _, initial_error, _, _ = execute_calibration(copy_model, dataset=current_dataset)
         copy_model.reset_estimated_dh()
         initial_error_value = initial_error[i_target]
         
-        dataset_new = np.delete(dataset, pose_num, axis=0)
+        # Calculate new error without the target pose
+        dataset_new = np.delete(current_dataset, pose_num, axis=0)
         _, new_error, _, _ = execute_calibration(copy_model, dataset=dataset_new)
         copy_model.reset_estimated_dh()
         new_error_value = new_error[i_target]
 
-        error += new_error_value - initial_error_value
+        # Append the raw difference
+        batch_results.append(new_error_value - initial_error_value)
             
-            
-    return error / num_tries_in_batch
+    return batch_results
 
 def rate_poses_contributions(model, i_target, num_tries, floor_l, floor_h):
     dataset = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
-    poses = dataset[dataset[:, 6] == i_target]
-    poses[:, 0:6] *= DEG
+    poses_mask = dataset[:, 6] == i_target
+    poses = dataset[poses_mask]
+    
+    poses[:, 0:6] *= DEG # Assuming DEG is defined globally
     dataset = measure_all_distances(model)
-    zero_index = np.where(dataset[:, 6] == i_target)[0][0]
+    
+    # Find the starting index of this parameter's poses in the full dataset
+    zero_index = np.where(poses_mask)[0][0]
     
     print(f"Starting analysis of {len(poses)} poses across {num_tries} tries...")
 
@@ -341,44 +345,42 @@ def rate_poses_contributions(model, i_target, num_tries, floor_l, floor_h):
     chunk_size = num_tries // num_cores
     remainder = num_tries % num_cores
     
-    tasks = []
-    for pose_num in range(len(poses) - 1, -1, -1):
-        for i in range(num_cores):
-            current_batch_size = chunk_size + (1 if i < remainder else 0)
-            if current_batch_size > 0:
-                tasks.append((model, dataset, i_target, zero_index + pose_num, current_batch_size))
+    # Open the Pool ONCE outside the loop
+    with Pool(processes=num_cores) as pool:
+        for pose_num in range(len(poses) - 1, -1, -1):
+            tasks = [] # Reset tasks for the current pose
+            
+            for i in range(num_cores):
+                current_batch_size = chunk_size + (1 if i < remainder else 0)
+                if current_batch_size > 0:
+                    tasks.append((model, dataset, i_target, zero_index + pose_num, current_batch_size))
 
-        with Pool(processes=num_cores) as pool:
+            # Execute parallel batches
             results = pool.starmap(_rate_batch_worker, tasks)
-
-        error_vector = np.hstack(results)
-        error_median = np.median(error_vector) #* 1000
-        if error_median < 0:
-            dataset = np.delete(dataset, zero_index + pose_num, axis=0)
-            print(f"Deleted {pose_num} pose")
-        else:
-            print(f"Saved {pose_num} pose")
-
-    # for elem in error_vector:
-    #     print(elem)
-    
-    # error_median = np.median(error_vector, axis=1) * 1000
-    # viz = {i: value for i, value in enumerate(error_median)}
-    # viz_sorted = dict(sorted(viz.items(), key=lambda item: item[1]))
-    # print(viz_sorted.values())
-    # print(viz_sorted.keys())
-    # print((error_median))
-    # result_poses_l = poses[ error_median < floor_l ]
-    # result_poses_h = poses[error_median > floor_h ]
-    # result_poses = np.concatenate([result_poses_l, result_poses_h])
+            
+            # results is a list of lists. Flatten it to get all raw trial data.
+            error_vector = np.concatenate(results)
+            
+            # Calculate the true median
+            error_median = np.median(error_vector) 
+            
+            if error_median < 0:
+                dataset = np.delete(dataset, zero_index + pose_num, axis=0)
+                print(f"Deleted pose index {pose_num}")
+            else:
+                print(f"Saved pose index {pose_num}")
 
     result_poses = dataset
     result_poses[:, 0:6] /= DEG
-    #print(result_poses)
     
     print(f"Found {len(result_poses)} poses with positive contribution")
-    write_dataset(result_poses, "datasets/ARM95/wire/positive_contributions.csv", 
-                  model.fieldnames_options["wire_contributions"], tolerance=".3f")
+    
+    write_dataset(
+        result_poses, 
+        "datasets/ARM95/wire/positive_contributions.csv", 
+        model.fieldnames_options["wire_contributions"], 
+        tolerance=".3f"
+    )
     
     return result_poses
 
