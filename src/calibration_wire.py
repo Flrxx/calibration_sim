@@ -299,35 +299,52 @@ def write_validation_dataset(model: hayati_model.HayatiModel):
     write_dataset(validation_dataset, "results/ARM95/validation_results.csv", model.fieldnames_options["test_result"], tolerance = ".3f")
     print("Done")
 
-def calibrate_list_of_dh(model: hayati_model.HayatiModel, dh_list, dataset, est_dh_list):
-    height =  model.estimated_dh.shape[0]
+def calibrate_list_of_dh(model: hayati_model.HayatiModel, i_target, dataset, dh_list):
+    copy_model = copy.deepcopy(model)
+    height =  copy_model.estimated_dh.shape[0]
+    est_dh_list = np.zeros(shape=(len(dh_list) * height, copy_model.estimated_dh.shape[1]))
     #est_dh_list = np.zeros(shape=(len(dh_list) * height, model.estimated_dh.shape[1]))
-    errors_list = np.zeros(len=len(model.error_list))
-    for i, new_dh in enumerate(dh_list):
-        model.change_real_dh(new_dh)
-        current_dataset = measure_all_distances(model, dataset)
-        _, errors, _, _ = execute_calibration(model, dataset=current_dataset)
+    errors_list = np.zeros(len(copy_model.error_list))
+    for i in range(int(len(dh_list)/height)):
+        copy_model.change_real_dh(dh_list[i * height: (i+1) * height, :])
+        current_dataset = measure_all_distances(copy_model, dataset)
+        _, errors, _, _ = execute_calibration(copy_model, dataset=current_dataset)
         errors_list += errors
-        est_dh_list[i * height: (i+1) * height + 1, :] = model.estimated_dh
+        est_dh_list[i * height: (i+1) * height, :] = copy_model.estimated_dh
 
-    return errors/len(dh_list)
+    return est_dh_list, errors/len(dh_list)
+
+def _rate_batch_worker_optimized(model: hayati_model.HayatiModel, dataset, i_target, pose_num, num_tries_in_batch, dh_array, est_dh_array):
+    copy_model = copy.deepcopy(model)
+    new_error_list = []
+    height =  copy_model.estimated_dh.shape[0]
+    target_num, target_i = copy_model.params_from_letters(copy_model.error_list[i_target])
+
+    dataset_new = np.delete(dataset, pose_num, axis=0)
+    for i in range(num_tries_in_batch):
+        if i == num_tries_in_batch - 1:
+            pass
+        copy_model.change_real_dh(dh_array[i * height: (i+1) * height, :])
+        copy_model.estimated_dh = est_dh_array[i * height: (i+1) * height, :]
+        copy_model.estimated_dh[target_num][target_i] = copy_model.nominal_dh[target_num][target_i]
+        dataset_new = measure_all_distances(copy_model, dataset_new)
+        
+        _, new_error, _, _ = execute_calibration(copy_model, dataset=dataset_new)
+        new_error_value = new_error[i_target]
+        new_error_list.append(new_error_value)
+            
+    return new_error_list
+    
 
 def rate_poses_contributions_optimized(model: hayati_model.HayatiModel, i_target, num_tries, floor_l, floor_h):
     dataset_orig = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
     dataset_orig[:, 0:6] *= DEG
 
     poses_mask = dataset_orig[:, 6] == i_target
-    start_poses_mask = dataset_orig[:, 6] != i_target and dataset_orig[:, 6] > 0
-
-    start_poses = dataset_orig[start_poses_mask]
     target_poses = dataset_orig[poses_mask]
-
-    #target_poses[:, 0:6] *= DEG # Assuming DEG is defined globally
     dataset = measure_all_distances(model, dataset_orig)
     
-    # Find the starting index of this parameter's poses in the full dataset
     zero_index = np.where(poses_mask)[0][0]
-
     num_cores = cpu_count()
     chunk_size = num_tries // num_cores
     remainder = num_tries % num_cores
@@ -335,14 +352,28 @@ def rate_poses_contributions_optimized(model: hayati_model.HayatiModel, i_target
     # Open the Pool ONCE outside the loop
     is_changed = 1
     while is_changed == 1:
-        print("*" * 10)
         print(f"Starting analysis of {len(target_poses)} poses across {num_tries} tries...")
         height =  model.estimated_dh.shape[0]
         dh_array = np.zeros(shape=(num_tries * height, model.estimated_dh.shape[1]))
         for i in range(num_tries):
-            dh_array = dh_array[i * height: (i+1) * height + 1, :] = generate_real_dh
+            dh_array[i * height: (i+1) * height, :] = generate_real_dh(model)
         est_dh_array = np.zeros(shape=(num_tries * model.estimated_dh.shape[0], model.estimated_dh.shape[1]))
-        initial_errors = calibrate_list_of_dh(model, i_target, dataset_orig, est_dh_array)
+        tasks = []
+        for i in range(num_cores):
+            current_batch_size = chunk_size + (1 if i < remainder else 0)
+            if current_batch_size > 0:
+                tasks.append((model, i_target, dataset_orig,
+                                dh_array[i * current_batch_size * height: (i+1) * current_batch_size * height,:]))    
+        with Pool(processes=num_cores) as pool1:
+            results = pool1.starmap(calibrate_list_of_dh, tasks)
+
+        est_dh_array = np.concatenate([x[0] for x in results], axis=0)
+        initial_errors_res = np.stack([x[1] for x in results])
+        initial_errors_list = np.median(initial_errors_res , axis=0)
+        
+        #initial_errors_list = calibrate_list_of_dh(model, i_target, dataset_orig, dh_array, est_dh_array)
+        initial_error = initial_errors_list[i_target]
+
 
         is_changed = 0
         with Pool(processes=num_cores) as pool:
@@ -353,30 +384,25 @@ def rate_poses_contributions_optimized(model: hayati_model.HayatiModel, i_target
                 for i in range(num_cores):
                     current_batch_size = chunk_size + (1 if i < remainder else 0)
                     if current_batch_size > 0:
-                        tasks.append((model, dataset, i_target, zero_index + pose_num, current_batch_size))
+                        tasks.append((model, target_poses, i_target, pose_num, current_batch_size,
+                                        dh_array[i * current_batch_size * height: (i+1) * current_batch_size * height,:],
+                                        est_dh_array[i * current_batch_size * height: (i+1) * current_batch_size * height,:]))
 
                 # Execute parallel batches
-                results = pool.starmap(_rate_batch_worker, tasks)
+                results = pool.starmap(_rate_batch_worker_optimized, tasks)
                 
-                # results is a list of lists. Flatten it to get all raw trial data.
-                error_vector = np.concatenate([x[0] for x in results])
-                new_error_vector = np.concatenate([x[1] for x in results])
-                #initial_error_vector = np.concatenate([x[2] for x in results])
-                
-                # Calculate the true median
-                error_median = np.median(error_vector) 
-                # print(f"Delta value {error_median}")
-                # initial_median = np.median(initial_error_vector) 
-                # print(f"Initial value {initial_median}")
+                new_error_vector = np.concatenate([x for x in results])
                 new_median = np.median(new_error_vector) 
                 print(f"New value {new_median:.3f}")
-                
 
-                if error_median > 0.005:
+                error_median = new_median - initial_error
+
+                if error_median > 0.002:
                     dataset = np.delete(dataset, zero_index + pose_num, axis=0)
                     target_poses = np.delete(target_poses, pose_num, axis=0)
                     print(f"Deleted pose index {pose_num}")
                     is_changed = 1
+                    initial_error = new_median
                 else:
                     print(f"Saved pose index {pose_num}")
             
@@ -518,7 +544,7 @@ def main(args):
         else:
             make_many_calibration_attempts(model, args.num_of_tries, args.generate, args.draw)  # ,params_error
     elif args.mode == "rate":
-        rate_poses_contributions(model, args.i_target, args.num_of_tries, args.floor_l, args.floor_h)
+        rate_poses_contributions_optimized(model, args.i_target, args.num_of_tries, args.floor_l, args.floor_h)
     print("Done")
 
 if __name__ == "__main__":
@@ -528,8 +554,8 @@ if __name__ == "__main__":
     parser.add_argument("--generate", action='store_true')
     parser.add_argument("--is_real", action='store_true')
     parser.add_argument("--draw", action='store_true')
-    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=3000)
-    parser.add_argument("-i", "--i_target", help="", type=int, default=1)
+    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=100)
+    parser.add_argument("-i", "--i_target", help="", type=int, default=3)
     parser.add_argument("-f_l", "--floor_l", help="", type=float, default=0.0)
     parser.add_argument("-f_h", "--floor_h", help="", type=float, default=0.0)
 
