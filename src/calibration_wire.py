@@ -336,9 +336,11 @@ def _rate_batch_worker(model: hayati_model.HayatiModel, dataset, i_target, pose_
             
     return new_error_list
 
-def rate_poses_contributions(model: hayati_model.HayatiModel, i_target, num_tries, floor_l, floor_h):
+def rate_poses_contributions(model: hayati_model.HayatiModel, i_target, num_tries):
     dataset_orig = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
     dataset_orig[:, 0:6] *= DEG
+    positive_mask = dataset_orig[:, 6] >= 0
+    dataset_orig = dataset_orig[positive_mask]
 
     poses_mask = dataset_orig[:, 6] == i_target
     target_poses = dataset_orig[poses_mask]
@@ -356,6 +358,7 @@ def rate_poses_contributions(model: hayati_model.HayatiModel, i_target, num_trie
     while is_changed == 1:
         
         if loop_completed: # gen new DH
+            is_changed = 0
             print("Generating new DH")
             height =  model.estimated_dh.shape[0]
             dh_array = np.zeros(shape=(num_tries * height, model.estimated_dh.shape[1]))
@@ -379,7 +382,7 @@ def rate_poses_contributions(model: hayati_model.HayatiModel, i_target, num_trie
             initial_error = initial_errors_list[i_target]
             print(f"Initial error {initial_error:.3f}")
 
-        is_changed = 0
+        
         with Pool(processes=num_cores) as pool:
             loop_completed = 0
             for pose_num in range(len(target_poses) - 1, -1, -1):
@@ -400,14 +403,17 @@ def rate_poses_contributions(model: hayati_model.HayatiModel, i_target, num_trie
                 print(f"New value {new_median:.3f}")
 
                 error_median = new_median - initial_error
+                # print(target_poses[pose_num])
+                # print(dataset[zero_index + pose_num])
 
-                if error_median > 0.002:
+
+                if error_median > 0.001:
                     dataset = np.delete(dataset, zero_index + pose_num, axis=0)
                     target_poses = np.delete(target_poses, pose_num, axis=0)
                     print(f"Deleted pose index {pose_num}")
                     is_changed = 1
                     initial_error = new_median
-                    break
+                    #break
                 else:
                     print(f"Saved pose index {pose_num}")
             else:   
@@ -445,7 +451,7 @@ def main(args):
         else:
             make_many_calibration_attempts(model, args.num_of_tries, args.generate, args.draw)  # ,params_error
     elif args.mode == "rate":
-        rate_poses_contributions(model, args.i_target, args.num_of_tries, args.floor_l, args.floor_h)
+        rate_poses_contributions(model, args.i_target, args.num_of_tries)
     print("Done")
 
 if __name__ == "__main__":
@@ -455,10 +461,8 @@ if __name__ == "__main__":
     parser.add_argument("--generate", action='store_true')
     parser.add_argument("--is_real", action='store_true')
     parser.add_argument("--draw", action='store_true')
-    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=3000)
-    parser.add_argument("-i", "--i_target", help="", type=int, default=3)
-    parser.add_argument("-f_l", "--floor_l", help="", type=float, default=0.0)
-    parser.add_argument("-f_h", "--floor_h", help="", type=float, default=0.0)
+    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=2000)
+    parser.add_argument("-i", "--i_target", help="", type=int, default=10)
 
     args = parser.parse_args()
     main(args)

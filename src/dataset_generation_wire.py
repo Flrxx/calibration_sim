@@ -63,7 +63,7 @@ def calculate_optimal_position(model: hayati_model.HayatiModel, i_target: int, a
         output = calculate_contribution(model, angles)
         
         #return -(output[i_target]**2   -   1 * np.max(output[0:i_target]**2, initial=0.0001) - 5 * np.max(output[i_target + 1:]**2, initial=0.0001))  #/ max(len(output[i_target + 1:]), 1)
-        return -(abs(output[i_target]) /( sqrt(np.sum(output[i_target + 1:]**2)) + 0.01 ) )
+        return -(abs(output[i_target]) /( sqrt(np.sum(output[i_target + 1:]**2)) + 0.01  + sqrt(np.sum(output[0:i_target]**2/50))    ) )
 
     cons = []
     if border == -1:
@@ -476,8 +476,8 @@ if __name__ == "__main__":
     parser.add_argument("-n", "--tries_count", help="Number of tries. Default: 10", type=int, default=0)
     parser.add_argument("-a", "--angle_diff", help="Angle difference between poses. Default: 5", type=float, default=7)
     parser.add_argument("-l", "--len_diff", help="Lenght difference between poses, mm. Default: 2", type=float, default=50)
-    parser.add_argument("-p", "--prev_eps", help="Epsilon for previous params. Default: 0.005", type=float, default=10)
-    parser.add_argument("-f", "--future_eps", help="Epsilon for future params. Default: 0.0004", type=float, default=10)
+    parser.add_argument("-p", "--prev_eps", help="Epsilon for previous params. Default: 0.005", type=float, default=100)
+    parser.add_argument("-f", "--future_eps", help="Epsilon for future params. Default: 0.0004", type=float, default=100)
     parser.add_argument("-b", "--border", help="", type=int, default=-1)
     parser.add_argument("-b_e", "--border_eps", help="", type=float, default=0.01)
 
