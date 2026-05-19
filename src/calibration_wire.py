@@ -336,7 +336,7 @@ def _rate_batch_worker(model: hayati_model.HayatiModel, dataset, i_target, pose_
             
     return new_error_list
 
-def rate_poses_contributions(model: hayati_model.HayatiModel, i_target, num_tries):
+def rate_poses_contributions(model: hayati_model.HayatiModel, i_target, num_tries, floor):
     dataset_orig = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
     dataset_orig[:, 0:6] *= DEG
     positive_mask = dataset_orig[:, 6] >= 0
@@ -407,7 +407,7 @@ def rate_poses_contributions(model: hayati_model.HayatiModel, i_target, num_trie
                 # print(dataset[zero_index + pose_num])
 
 
-                if error_median > 0.001:
+                if error_median > floor:
                     dataset = np.delete(dataset, zero_index + pose_num, axis=0)
                     target_poses = np.delete(target_poses, pose_num, axis=0)
                     print(f"Deleted pose index {pose_num}")
@@ -451,7 +451,7 @@ def main(args):
         else:
             make_many_calibration_attempts(model, args.num_of_tries, args.generate, args.draw)  # ,params_error
     elif args.mode == "rate":
-        rate_poses_contributions(model, args.i_target, args.num_of_tries)
+        rate_poses_contributions(model, args.i_target, args.num_of_tries, args.floor)
     print("Done")
 
 if __name__ == "__main__":
@@ -463,6 +463,7 @@ if __name__ == "__main__":
     parser.add_argument("--draw", action='store_true')
     parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=2000)
     parser.add_argument("-i", "--i_target", help="", type=int, default=10)
+    parser.add_argument("-f", "--floor", help="", type=float, default=0.001)
 
     args = parser.parse_args()
     main(args)

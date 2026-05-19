@@ -66,14 +66,15 @@
   "test_dataset_file": "datasets/ARM95/absolute/random_samples.csv",
   "results_file": "results/ARM95/results.json",
 
-  "error_list": ["a_6", "d_6", "alpha_6", "a_5", "alpha_5", "theta_6",    
-                 "theta_5", "a_4", "d_5", "alpha_4", "beta_3", "theta_4", "alpha_3", "a_3", "theta_3", 
+  "error_list": ["a_6", "d_6", "alpha_6", "a_5", "theta_6",
+                 "theta_5", "a_4", "alpha_5", "d_5", "alpha_4", "beta_3", "theta_4", "alpha_3", "a_3", "theta_3", 
                  "beta_2", "alpha_2", "a_2", "d_4", "theta_2", "alpha_1", "a_1",      
-                 "d_1", "theta_1"],
+                  "d_1", "theta_1"],
+                  
   "wire_limits_l_mm": 30,
   "wire_limits_h_mm": 10000,
-  "angle_limit_wire_deg": 15,
-  "angle_limit_z_deg": 15,
+  "angle_limit_wire_deg": 60,
+  "angle_limit_z_deg": 60,
 
   "distance_delta_mm": 1.0,
   "angle_delta_deg": 1.0,

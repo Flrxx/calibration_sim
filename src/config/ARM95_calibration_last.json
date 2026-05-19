@@ -85,6 +85,6 @@
   "theta_delta_deg": 1,
   "beta_delta_deg": 1,
 
-  "ignore_errors_list": [],
+  "ignore_errors_list": ["d_1", "theta_1"],
   "test_samples_number": 100
 }

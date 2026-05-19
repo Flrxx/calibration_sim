@@ -1,17 +1,17 @@
-import numpy as np
+import time
 
-# 1. Создаем исходный массив
-original = np.array([10, 20, 30, 40, 50])
+def my_decorator(func):
+    def measure_time(*args, **kwargs):
+        start_time = time.time()
+        func(*args, **kwargs)
+        stop_time = time.time()
+        print(f"Time {stop_time - start_time}")
+    return measure_time
 
-# 2. Делаем срез от начала до конца
-# Это НЕ копия, это "окно" в тот же массив
-view_slice = original[150:len(original)+3]
+@my_decorator
+def test(n):
+    for _ in range(n):
+        time.sleep(1)
 
-print(f"Оригинал до изменений: {original}")
 
-# 3. Меняем элемент в срезе
-view_slice[0] = 999
-
-# 4. Смотрим, что произошло с оригиналом
-print(f"Срез: {view_slice}")
-print(f"Оригинал ПОСЛЕ: {original}") # Он тоже изменился!
+test(3)
