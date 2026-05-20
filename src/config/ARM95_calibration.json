@@ -49,16 +49,16 @@
     0, 0.06454, 0.0364, 0, 0, 0
   ],
 
-"zero_wire_angles":[
-    14.65,
-    24.05,
-    141.18,
-    -75.23,
+  "zero_wire_angles":[
+    14.56,
+    24.78,
+    141.27,
+    -76.06,
     90.000,
-    -14.64
+    -14.56
   ],
-  "encoder_abs_tolerance_percent": 0.0,
-  "encoder_resolution_mm": 0.0,
+  "encoder_abs_tolerance_percent": 0.08,
+  "encoder_resolution_mm": 0.05,
   "max_z_angle": 3.14,  
   "generation_output": "datasets/ARM95/wire/generation_output.csv",
   "contribution_dataset": "datasets/ARM95/wire/contribution_dataset.csv",
@@ -73,17 +73,17 @@
                   
   "wire_limits_l_mm": 30,
   "wire_limits_h_mm": 10000,
-  "angle_limit_wire_deg": 60,
-  "angle_limit_z_deg": 60,
+  "angle_limit_wire_deg": 75,
+  "angle_limit_z_deg": 75,
 
   "distance_delta_mm": 1.0,
   "angle_delta_deg": 1.0,
   
-  "a_delta_mm": 3,
+  "a_delta_mm": 1.5,
   "alpha_delta_deg": 0.5,
-  "d_delta_mm": 6,
-  "theta_delta_deg": 1,
-  "beta_delta_deg": 1,
+  "d_delta_mm": 3,
+  "theta_delta_deg": 0.5,
+  "beta_delta_deg": 0.5,
 
   "ignore_errors_list": [],
   "test_samples_number": 100

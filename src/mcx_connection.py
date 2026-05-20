@@ -115,11 +115,11 @@ class MCX:
             value = -1
         return value
 
-    def execute_moveL(self, point: np.ndarray, velocity=0.2): #0.02
+    def execute_moveL(self, point: np.ndarray, velocity=0.02): #0.02
         self.motion_program.addMoveL([Waypoint(point)], velocity=velocity)
         self.execute_move()
     
-    def execute_moveJ(self, pose: np.ndarray, rotational_velocity=1): #0.1
+    def execute_moveJ(self, pose: np.ndarray, rotational_velocity=0.1): #0.1
         self.motion_program.addMoveJ([Waypoint(pose)], rotational_velocity=rotational_velocity)
         self.execute_move()
 
@@ -212,7 +212,7 @@ class MCX:
                 distance_theor = sqrt((tcp_coords_nom[0] - zero_point[0])**2 + (tcp_coords_nom[1] - zero_point[1])**2 + (tcp_coords_nom[2] - zero_point[2])**2)
                 
                 vertical_offset_point =  copy.deepcopy(zero_point)
-                vertical_offset_point[2] += distance_theor
+                vertical_offset_point[2] += distance_theor + 50/1000 #mm
                 print(f"Theoretical distance: {(distance_theor * 1000):.2f} mm")
             
                 self.execute_moveL(vertical_offset_point)
@@ -272,7 +272,6 @@ class MCX:
             
             self.execute_moveJ(pose[:6])
             print(f"Done pose {i + 2 + self.start_num}")
-            #input()
             time.sleep(2)
             wire_len = self.get_wire_distance(self.null_value)
             if wire_len > 0:
@@ -346,7 +345,6 @@ class MCX:
             
             self.execute_moveJ(pose)
             print(f"Done pose {i + 2 + self.start_num}")
-            #input()
             time.sleep(2)
             wire_len = self.get_wire_distance(self.null_value)
             if wire_len > 0:

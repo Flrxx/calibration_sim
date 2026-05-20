@@ -27,7 +27,7 @@ def calculate_jac_DH_params(model: hayati_model.HayatiModel, angles: Union[list,
     return jac_DH
 
 def calculate_distance(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray], type: str):
-    if type not in ["estimated", "nominal"]:
+    if type not in ["estimated", "nominal", "real"]:
         print("Wrong type")
         return(None)
     point_offset = model.get_transition_matrix(angles, type)[0:3, 3]

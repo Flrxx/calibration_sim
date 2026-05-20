@@ -183,6 +183,9 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
     local_estimated_error = 0.0
     local_estimated_error_prev = 0.0
     for _ in range(tries_count):
+
+        copy_model.reset_estimated_dh()
+        
         if generate:
             new_dh = generate_real_dh(copy_model)
             copy_model.change_real_dh(new_dh)
@@ -194,12 +197,12 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
         local_nom_param_errors += np.abs(nom_param_errors_new)
         local_est_param_errors +=  np.abs(est_param_errors_new)
         
-        # new_nom, new_est, new_esp_prev = check_results(copy_model, last_indexes)
-        # local_nominal_error += new_nom
-        # local_estimated_error += new_est
-        # local_estimated_error_prev += new_esp_prev
+        new_nom, new_est, new_esp_prev = check_results(copy_model, last_indexes)
+        local_nominal_error += new_nom
+        local_estimated_error += new_est
+        local_estimated_error_prev += new_esp_prev
         
-        copy_model.reset_estimated_dh()
+        
     
     #print(local_param_errors)
     local_param_errors /= (tries_count)
@@ -210,6 +213,9 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
     local_nominal_error /= tries_count
     local_estimated_error /= tries_count
     local_estimated_error_prev /= tries_count
+    
+    #write_validation_dataset(copy_model)
+
     return local_nominal_error, local_estimated_error, local_estimated_error_prev, local_param_errors, local_nom_param_errors, local_est_param_errors
 
 def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: int, genarate: bool, draw: bool):
@@ -286,8 +292,16 @@ def validate_wire(model: hayati_model.HayatiModel):
         distance_theoretical = np.linalg.norm(calculate_distance(model, line[0:6], "nominal"))
         distance_estimated = np.linalg.norm(calculate_distance(model, line[0:6], "estimated"))
         
+        
         res[i] = np.concatenate([line[0:6], [distance_theoretical, distance_estimated, 
-                                             line[8], (abs(line[8] - distance_theoretical) - abs(line[8] - distance_estimated))]])
+                                            line[8], (abs(line[8] - distance_theoretical) - abs(line[8] - distance_estimated))]])
+        
+
+        # distance_real = np.linalg.norm(calculate_distance(model, line[0:6], "real"))
+        # res[i] = np.concatenate([line[0:6], [distance_theoretical, distance_estimated, 
+                                            #  distance_real, (abs(distance_real - distance_theoretical) - abs(distance_real - distance_estimated))]])
+
+
     res[-1, 6:] = np.array([np.median(res[:, 6]), np.median(res[:, 7]), np.median(res[:, 8]), np.median(res[:, 9])])
     return res
 
@@ -450,6 +464,7 @@ def main(args):
                 plot_side_by_side_hist(data_before, data_after)
         else:
             make_many_calibration_attempts(model, args.num_of_tries, args.generate, args.draw)  # ,params_error
+            
     elif args.mode == "rate":
         rate_poses_contributions(model, args.i_target, args.num_of_tries, args.floor)
     print("Done")
