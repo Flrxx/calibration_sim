@@ -115,11 +115,11 @@ class MCX:
             value = -1
         return value
 
-    def execute_moveL(self, point: np.ndarray, velocity=0.02): #0.02
+    def execute_moveL(self, point: np.ndarray, velocity=0.03): #0.02
         self.motion_program.addMoveL([Waypoint(point)], velocity=velocity)
         self.execute_move()
     
-    def execute_moveJ(self, pose: np.ndarray, rotational_velocity=0.1): #0.1
+    def execute_moveJ(self, pose: np.ndarray, rotational_velocity=0.15): #0.1
         self.motion_program.addMoveJ([Waypoint(pose)], rotational_velocity=rotational_velocity)
         self.execute_move()
 
@@ -231,8 +231,9 @@ class MCX:
                 result[i, 7] = wire_len
                 result[i, 0:6] = self.joint_subscription.read()[0].value
                 self.execute_moveJ(vertical_offset_pose)
-                #time.sleep(1)
-            add_line_csv((result[i]), "datasets/ARM95/wire/log.csv", model.fieldnames_options["wire_samples"])
+                
+                #time.sleep(1) 
+            add_line_csv((np.concatenate( (result[i, 0:6] / DEG, result[i, 6:]) )), "datasets/ARM95/wire/log.csv", model.fieldnames_options["wire_samples"])
         self.move_to_start(previous_poses, zero_point)
         return result
     
@@ -290,7 +291,7 @@ class MCX:
         return result
 
     def write_validation_dataset(self, model: hayati_model.HayatiModel):              
-        validation_dataset = read_dataset("datasets/ARM95/validation_dataset.csv", model.fieldnames_options["test_result"])
+        validation_dataset = read_dataset("datasets/ARM95/wire/validation_dataset.csv", model.fieldnames_options["test_result"])
         validation_dataset[:, :6] *= DEG
         validation_dataset[:, 6:] /= 1000
         validation_dataset = validation_dataset[self.start_num:, :]

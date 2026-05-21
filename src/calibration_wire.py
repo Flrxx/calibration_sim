@@ -173,7 +173,7 @@ def check_results(model: hayati_model.HayatiModel, last_indexes: list):
                      tolerance=".3f")
     return avg_nom_error, avg_est_error, avg_est_error_prev
 
-def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
+def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate, is_real=False):
     copy_model = copy.deepcopy(model)
     local_param_errors = np.zeros(len(model.error_list))
     local_nom_param_errors = np.zeros(len(model.error_list))
@@ -213,12 +213,14 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate):
     local_nominal_error /= tries_count
     local_estimated_error /= tries_count
     local_estimated_error_prev /= tries_count
-    
-    #write_validation_dataset(copy_model)
+
+
+    if tries_count == 1:
+        write_validation_dataset(copy_model, is_real)
 
     return local_nominal_error, local_estimated_error, local_estimated_error_prev, local_param_errors, local_nom_param_errors, local_est_param_errors
 
-def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: int, genarate: bool, draw: bool):
+def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: int, genarate: bool, draw: bool, ):
     num_cores = cpu_count()
     chunk_size = max(1, (tries_num // num_cores))
 
@@ -280,8 +282,8 @@ def write_results(model: hayati_model.HayatiModel):
     print()
     print(est_params[:, :4])
 
-def validate_wire(model: hayati_model.HayatiModel):
-    validation_dataset = read_dataset("results/ARM95/validation_results.csv", model.fieldnames_options["test_result"])
+def validate_wire(model: hayati_model.HayatiModel, is_real, source_path):
+    validation_dataset = read_dataset(source_path, model.fieldnames_options["test_result"])
     validation_dataset[:, :6] *= DEG
     validation_dataset[:, 6:] /= 1000
 
@@ -293,24 +295,34 @@ def validate_wire(model: hayati_model.HayatiModel):
         distance_estimated = np.linalg.norm(calculate_distance(model, line[0:6], "estimated"))
         
         
-        res[i] = np.concatenate([line[0:6], [distance_theoretical, distance_estimated, 
-                                            line[8], (abs(line[8] - distance_theoretical) - abs(line[8] - distance_estimated))]])
+        if is_real:
+            res[i] = np.concatenate([line[0:6], [distance_theoretical, distance_estimated, 
+                                                line[8], (abs(line[8] - distance_theoretical) - abs(line[8] - distance_estimated))]])
         
+        else:    
+            distance_real = np.linalg.norm(calculate_distance(model, line[0:6], "real"))
+            res[i] = np.concatenate([line[0:6], [distance_theoretical, distance_estimated, 
+                                                distance_real, (abs(distance_real - distance_theoretical) - abs(distance_real - distance_estimated))]])
 
-        # distance_real = np.linalg.norm(calculate_distance(model, line[0:6], "real"))
-        # res[i] = np.concatenate([line[0:6], [distance_theoretical, distance_estimated, 
-                                            #  distance_real, (abs(distance_real - distance_theoretical) - abs(distance_real - distance_estimated))]])
 
+    res[-1, 6:] = np.array([np.mean(res[:-1, 6]), np.mean(res[:-1, 7]), np.mean(res[:-1, 8]), np.mean(res[:-1, 9])])
 
-    res[-1, 6:] = np.array([np.median(res[:, 6]), np.median(res[:, 7]), np.median(res[:, 8]), np.median(res[:, 9])])
     return res
 
-def write_validation_dataset(model: hayati_model.HayatiModel):
-    validation_dataset = validate_wire(model)
+def write_validation_dataset(model: hayati_model.HayatiModel, is_real=False):
+    if is_real:
+        source_path = "results/ARM95/validation_results_real.csv"
+    else:
+        source_path = "results/ARM95/validation_results_sim.csv"
+
+
+    validation_dataset = validate_wire(model, is_real, source_path)
     
     validation_dataset[:, :6] /= DEG
     validation_dataset[:, 6:] *= 1000
-    write_dataset(validation_dataset, "results/ARM95/validation_results.csv", model.fieldnames_options["test_result"], tolerance = ".3f")
+
+
+    write_dataset(validation_dataset, source_path, model.fieldnames_options["test_result"], tolerance = ".3f")
     print("Done")
 
 def _calibrate_list_of_dh(model: hayati_model.HayatiModel, i_target, dataset, dh_list):
@@ -391,7 +403,7 @@ def rate_poses_contributions(model: hayati_model.HayatiModel, i_target, num_trie
 
             est_dh_array = np.concatenate([x[0] for x in results], axis=0)
             initial_errors_res = np.stack([x[1] for x in results])
-            initial_errors_list = np.median(initial_errors_res , axis=0)
+            initial_errors_list = np.mean(initial_errors_res , axis=0)
             
             initial_error = initial_errors_list[i_target]
             print(f"Initial error {initial_error:.3f}")
@@ -413,7 +425,7 @@ def rate_poses_contributions(model: hayati_model.HayatiModel, i_target, num_trie
                 results = pool.starmap(_rate_batch_worker, tasks)
                 
                 new_error_vector = np.concatenate([x for x in results])
-                new_median = np.median(new_error_vector) 
+                new_median = np.mean(new_error_vector) 
                 print(f"New value {new_median:.3f}")
 
                 error_median = new_median - initial_error
@@ -456,7 +468,7 @@ def main(args):
         if args.is_real:
             execute_calibration(model)
             write_results(model)
-            write_validation_dataset(model)
+            write_validation_dataset(model, args.is_real)
             data = read_dataset("results/ARM95/validation_results.csv", ['q1','q2','q3','q4','q5','q6','d_nom','d_est','d_encoder','diff'])
             data_before = data[:, 6]
             data_after = data[:, 7]
@@ -472,11 +484,11 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: src/config/ARM95_calibration.json", default="src/config/ARM95_calibration.json")
-    parser.add_argument("-m", "--mode", help="calibration or rate", default="rate")
+    parser.add_argument("-m", "--mode", help="calibration or rate", default="calibration")
     parser.add_argument("--generate", action='store_true')
     parser.add_argument("--is_real", action='store_true')
     parser.add_argument("--draw", action='store_true')
-    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=2000)
+    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=1)
     parser.add_argument("-i", "--i_target", help="", type=int, default=10)
     parser.add_argument("-f", "--floor", help="", type=float, default=0.001)
 

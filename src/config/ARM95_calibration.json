@@ -79,10 +79,10 @@
   "distance_delta_mm": 1.0,
   "angle_delta_deg": 1.0,
   
-  "a_delta_mm": 1.5,
-  "alpha_delta_deg": 0.5,
-  "d_delta_mm": 3,
-  "theta_delta_deg": 0.5,
+  "a_delta_mm": 1,
+  "alpha_delta_deg": 0.3,
+  "d_delta_mm": 1,
+  "theta_delta_deg": 0.3,
   "beta_delta_deg": 0.5,
 
   "ignore_errors_list": [],
