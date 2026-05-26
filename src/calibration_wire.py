@@ -305,8 +305,8 @@ def validate_wire(model: hayati_model.HayatiModel, is_real, source_path):
                                                 distance_real, (abs(distance_real - distance_theoretical) - abs(distance_real - distance_estimated))]])
 
 
-    res[-1, 6:] = np.array([np.mean(res[:-1, 6]), np.mean(res[:-1, 7]), np.mean(res[:-1, 8]), np.mean(res[:-1, 9])])
-
+    res[-1, 6:] = np.array([np.mean(abs(res[:-1, 6] - res[:-1, 8])), np.mean(abs(res[:-1, 7] - res[:-1, 8])), np.mean(res[:-1, 8]), np.mean(res[:-1, 9])])
+    print((res[:-1, 7] - res[:-1, 8])* 1000)
     return res
 
 def write_validation_dataset(model: hayati_model.HayatiModel, is_real=False):
