@@ -247,6 +247,23 @@ def visualize_dataset(model: hayati_model.HayatiModel, dataset, model_type, wire
     robot_display.zero_wire_pos = model.get_transition_matrix(model.zero_wire_angles, model_type)[0:3, 3]
     robot_display.zero_wire_direction = model.zero_wire_direction * 0.1
 
+    # >>> ВСТАВЛЯТЬ СЮДА <<<
+    dataset_np = np.array(dataset)
+    points_cloud = np.zeros((len(dataset_np), 3))
+    for i in range(len(dataset_np)):
+        q = dataset_np[i, :6] * DEG
+        T = model.get_transition_matrix(q, model_type)
+        points_cloud[i] = T[:3, 3]
+    vector_cloud = dataset_np[:, 9]
+    pos_mask = vector_cloud >= 0
+    neg_mask = vector_cloud < 0
+    if np.any(pos_mask):
+        robot_display.ax.scatter(points_cloud[pos_mask, 0], points_cloud[pos_mask, 1], points_cloud[pos_mask, 2], c='green', alpha=0.5, edgecolors='w', s=35, label='Diff >= 0')
+    if np.any(neg_mask):
+        robot_display.ax.scatter(points_cloud[neg_mask, 0], points_cloud[neg_mask, 1], points_cloud[neg_mask, 2], c='red', alpha=0.5, edgecolors='w', s=35, label='Diff < 0')
+    #robot_display.ax.legend(loc="upper left")
+    # >>> КОНЕЦ ВСТАВКИ <<<
+
     num = mp.Value('i', 0)
     robot_display.fig.canvas.mpl_connect('key_press_event', 
                                 lambda event: on_key_press(event, num, len(dataset) - 1))
@@ -284,9 +301,9 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="ARM95.json")
+    parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="src/config/ARM95_calibration.json")
     parser.add_argument("-m", "--model_type", help="Choose model to be visualized. Default: nominal", type=str, default="nominal")
     parser.add_argument("-t", "--visualization_type", help="Choose what you want to display: forward_kinematics or dataset. Default: forward_kinematics", type=str, default="forward_kinematics")
-    parser.add_argument("-d", "--dataset", help="Choose dataset to display. Default: datasets/ARM95/data_ARM95.csv", type=str, default="datasets/ARM95/data_ARM95.csv")
+    parser.add_argument("-d", "--dataset", help="Choose dataset to display. Default: datasets/ARM95/data_ARM95.csv", type=str, default="results/ARM95/validation_results_real.csv")
     args = parser.parse_args()
     main(args)

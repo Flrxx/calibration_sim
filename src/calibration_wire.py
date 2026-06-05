@@ -15,10 +15,10 @@ from multiprocessing import Pool, cpu_count
 import copy
 from math_routines import DEG
 from graph import plot_side_by_side_hist, plot_dh_comparison
+import itertools
 
 
-def execute_calibration(model: hayati_model.HayatiModel, dataset=[]):
-    is_real = 0
+def execute_calibration(model: hayati_model.HayatiModel, dataset=[], is_real=0):
     if len(dataset) == 0:
         is_real = 1
         dataset = read_dataset(model.calibration_dataset, model.fieldnames_options["wire_samples"]) 
@@ -282,10 +282,7 @@ def write_results(model: hayati_model.HayatiModel):
     print()
     print(est_params[:, :4])
 
-def validate_wire(model: hayati_model.HayatiModel, is_real, source_path):
-    validation_dataset = read_dataset(source_path, model.fieldnames_options["test_result"])
-    validation_dataset[:, :6] *= DEG
-    validation_dataset[:, 6:] /= 1000
+def validate_wire(model: hayati_model.HayatiModel, validation_dataset, is_real):
 
     res = np.zeros(shape=(validation_dataset.shape)) 
     for i, line in enumerate(validation_dataset[:-1]):
@@ -306,7 +303,7 @@ def validate_wire(model: hayati_model.HayatiModel, is_real, source_path):
 
 
     res[-1, 6:] = np.array([np.mean(abs(res[:-1, 6] - res[:-1, 8])), np.mean(abs(res[:-1, 7] - res[:-1, 8])), np.mean(res[:-1, 8]), np.mean(res[:-1, 9])])
-    print((res[:-1, 7] - res[:-1, 8])* 1000)
+    #print((res[:-1, 7] - res[:-1, 8])* 1000)
     return res
 
 def write_validation_dataset(model: hayati_model.HayatiModel, is_real=False):
@@ -315,14 +312,16 @@ def write_validation_dataset(model: hayati_model.HayatiModel, is_real=False):
     else:
         source_path = "results/ARM95/validation_results_sim.csv"
 
+    validation_dataset = read_dataset(source_path, model.fieldnames_options["test_result"])
+    validation_dataset[:, :6] *= DEG
+    validation_dataset[:, 6:] /= 1000
 
-    validation_dataset = validate_wire(model, is_real, source_path)
-    
-    validation_dataset[:, :6] /= DEG
-    validation_dataset[:, 6:] *= 1000
+    output_dataset = validate_wire(model, validation_dataset, is_real)
+    output_dataset[:, :6] /= DEG
+    output_dataset[:, 6:] *= 1000
 
 
-    write_dataset(validation_dataset, source_path, model.fieldnames_options["test_result"], tolerance = ".3f")
+    write_dataset(output_dataset, source_path, model.fieldnames_options["test_result"], tolerance = ".3f")
     print("Done")
 
 def _calibrate_list_of_dh(model: hayati_model.HayatiModel, i_target, dataset, dh_list):
@@ -460,6 +459,81 @@ def rate_poses_contributions(model: hayati_model.HayatiModel, i_target, num_trie
     
     return target_poses
 
+def _worker_task(args):
+    """Изолированная задача для одного процесса."""
+    combo, model, calibration_data, validation_data = args
+    
+    # Сбрасываем параметры до номинала внутри процесса перед калибровкой
+    model.reset_estimated_dh()
+    
+    # Фильтрация данных
+    mask = np.isin(calibration_data[:, 6], combo)
+    filtered_data = calibration_data[mask]
+    
+    # Вычисление
+    execute_calibration(model, dataset=filtered_data, is_real=1)
+    score = validate_wire(model, validation_data, is_real=1)[-1, -1]
+    
+    return combo, score
+
+
+def find_best_combination(model: hayati_model.HayatiModel, calibration_data, validation_data):
+    """Перебирает все комбинации уникальных чисел из 7-го столбца
+    в параллельных процессах и находит лучшую метрику.
+    """
+    mask = calibration_data[:, 6] >= 0
+    calibration_data = calibration_data[mask]
+
+    unique_identifiers = np.unique(calibration_data[:, 6]).astype(int)
+    n_unique = len(unique_identifiers)
+
+    total_combinations = 2**n_unique - 1
+    print(f"Уникальных чисел в 7-м столбце: {n_unique}")
+    print(f"Всего будет проверено непустых комбинаций: {total_combinations}")
+
+    if n_unique > 20:
+        print("⚠️ Внимание: уникальных чисел слишком много! Комбинаторный взрыв займет много времени.")
+        
+    counter = 0
+    progress_step = max(1, total_combinations // 10)
+    
+    best_score = float("-inf")
+    best_combination = None
+    
+    # Фиксируем время старта перед запуском пула
+    start_time = time.time()
+
+    # Генерируем ленивый генератор тасков, чтобы не забивать RAM всеми комбинациями сразу
+    tasks = (
+        (combo, model, calibration_data, validation_data)
+        for r in range(1, n_unique + 1)
+        for combo in itertools.combinations(unique_identifiers, r)
+    )
+
+    # Запуск пула процессов (по умолчанию займет все доступные ядра CPU)
+    with Pool() as pool:
+        # imap_unordered возвращает результаты сразу по мере готовности, 
+        # что идеально подходит для сохранения плавности логов прогресса
+        for combo, score in pool.imap_unordered(_worker_task, tasks, chunksize=5):
+            
+            # Фиксируем лучший результат в главном процессе
+            if score > best_score:
+                best_score = score
+                best_combination = combo
+                
+            # === ЛОГИРОВАНИЕ КАЖДЫЕ 10% ===
+            counter += 1
+            if counter % progress_step == 0 or counter == total_combinations:
+                elapsed_time = time.time() - start_time
+                percent = (counter / total_combinations) * 100
+                print(
+                    f"Выполнено: {percent:3.0f}% | "
+                    f"Операций: {counter}/{total_combinations} | "
+                    f"Прошло времени: {elapsed_time:.2f} сек"
+                )
+
+    return best_combination, best_score
+
 def main(args):
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
@@ -479,6 +553,21 @@ def main(args):
             
     elif args.mode == "rate":
         rate_poses_contributions(model, args.i_target, args.num_of_tries, args.floor)
+  
+    
+    elif args.mode == "test":
+        validation_data = read_dataset("results/ARM95/validation_results.csv", ['q1','q2','q3','q4','q5','q6','d_nom','d_est','d_encoder','diff'])
+        calibration_data = read_dataset("datasets/ARM95/wire/calibration_dataset_full_29.05.csv", ['q1','q2','q3','q4','q5','q6','index','d'])
+        
+        validation_data[:, :6] *= DEG
+        validation_data[:, 6:] /= 1000
+
+        calibration_data[:, 0:6] *= DEG
+        calibration_data[:, 7] /= 1000
+        
+        combination, score = find_best_combination(model, calibration_data, validation_data)
+        print(f"Best combination: {combination}\n Score: {score:.3f}")
+    
     print("Done")
 
 if __name__ == "__main__":
