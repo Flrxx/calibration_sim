@@ -1,39 +1,63 @@
 import numpy as np
 import csv
-from typing import Union
+from typing import Any
 import os
 
-def write_dataset(dataset: np.ndarray, filename: str, fieldnames: list[str], tolerance=".8f"):
-    with open(filename, 'w', newline='') as csvfile:
+def format_value(value: Any, tolerance: str = ".8f") -> str:
+    """Вспомогательная функция для форматирования значений."""
+    # Если это число (int, float, np.number), форматируем с точностью
+    if isinstance(value, (int, float, np.number)):
+        # Если нужно сохранять логику «ноль как пустая строка» (из вашего комментария):
+        # if np.isclose(value, 0, atol=1e-4): return ""
+        return f"{value:{tolerance}}"
+    
+    # Если это строка или что-то другое, возвращаем как есть (приведя к str)
+    return str(value) if value is not None else ""
+
+def write_dataset(dataset: np.ndarray, filename: str, fieldnames: list[str], tolerance: str = ".8f"):
+    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for row in dataset:
-            writer.writerow({name: f"{row[index]:{tolerance}}" for index, name in enumerate(fieldnames)})
+            writer.writerow({
+                name: format_value(row[index], tolerance) 
+                for index, name in enumerate(fieldnames)
+            })
 
-def add_line_csv(row: np.ndarray, filename: str, fieldnames: list[str], tolerance=".8f"):
+def add_line_csv(row: np.ndarray | list, filename: str, fieldnames: list[str], tolerance: str = ".8f"):
     file_exists = os.path.isfile(filename) and os.path.getsize(filename) > 0
 
-    with open(filename, 'a', newline='') as csvfile:
+    with open(filename, 'a', newline='', encoding='utf-8') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)        
         if not file_exists:
             writer.writeheader()        
-        
-        # Logic: If row[index] is 0, use "", else format with tolerance
-        # formatted_row = {
-        #     name: (f"{row[index]:{tolerance}}" if not np.isclose(row[index], 0, atol=1e-4) else "") 
-        #     for index, name in enumerate(fieldnames)
-        # }
 
         formatted_row = {
-            name: (f"{row[index]:{tolerance}}") for index, name in enumerate(fieldnames)
+            name: format_value(row[index], tolerance) 
+            for index, name in enumerate(fieldnames)
         }
         
         writer.writerow(formatted_row)
 
-def read_dataset(filename: str, fieldnames: list[str]) -> Union[np.ndarray, np.ndarray]:
-    dataset = np.array([], dtype='float').reshape(0, len(fieldnames))
-    with open(filename, newline='') as csvfile:
+def read_dataset(filename: str, fieldnames: list[str]) -> np.ndarray:
+    rows = []
+    with open(filename, newline='', encoding='utf-8') as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
-            dataset = np.concatenate((dataset, np.array([float(row[field]) for field in fieldnames]).reshape(1, -1)), axis=0)
-    return dataset
+            # Пытаемся конвертировать в числа то, что можно, остальное оставляем строками
+            row_converted = []
+            for field in fieldnames:
+                val = row[field]
+                try:
+                    # Проверяем, целое ли число или float
+                    if val.isdigit():
+                        row_converted.append(int(val))
+                    else:
+                        row_converted.append(float(val))
+                except (ValueError, TypeError):
+                    row_converted.append(val)  # Оставляем строкой
+            
+            rows.append(row_converted)
+            
+    # dtype='object' позволяет массиву NumPy хранить одновременно и строки, и числа
+    return np.array(rows, dtype=object)

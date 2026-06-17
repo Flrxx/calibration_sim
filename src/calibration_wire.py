@@ -14,7 +14,7 @@ from csv_routines import read_dataset, write_dataset
 from multiprocessing import Pool, cpu_count
 import copy
 from math_routines import DEG
-from graph import plot_side_by_side_hist, plot_dh_comparison
+from graph import plot_side_by_side_hist, plot_dh_comparison, plot_all_6_axes
 import itertools
 
 
@@ -22,8 +22,8 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[], is_real=0):
     if len(dataset) == 0:
         is_real = 1
         dataset = read_dataset(model.calibration_dataset, model.fieldnames_options["wire_samples"]) 
-        mask = dataset[:, 6] >= 0
-        dataset = dataset[mask]
+        #mask = dataset[:, 6] >= 0
+        #dataset = dataset[mask]
         dataset[:, 0:6] *= DEG
         dataset[:, 7] /= 1000
     param_errors = np.zeros(len(model.error_list))
@@ -35,7 +35,7 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[], is_real=0):
     real_params = model.get_readable_params("real")
     for j in range(1):
         for i in range (len(model.error_list)):
-            single_param_dataset = dataset[dataset[:, 6] == i]
+            single_param_dataset = dataset[dataset[:, 6] == model.error_list[i]]
             # if i == 7:
             #     print(single_param_dataset)
 
@@ -98,8 +98,8 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[], is_real=0):
     else:
         return True
 
-def calibrate_single_param(model: hayati_model.HayatiModel, dataset: Union[np.ndarray, list]):
-    param_index = int(dataset[0,6])
+def calibrate_single_param(model: hayati_model.HayatiModel, dataset: Union[np.ndarray, list]): 
+    param_index = int(model.error_list.index(dataset[0, 6]))
     param_num, param_letter_num = model.params_from_letters(model.error_list[param_index])
     real_distances = dataset[:,7]
 
@@ -140,21 +140,29 @@ def check_results(model: hayati_model.HayatiModel, last_indexes: list):
     nominal_data = np.array([model.get_transition_matrix(pose, "nominal")[0:3, 3] for pose in poses])
     real_data = np.array([model.get_transition_matrix(pose, "real")[0:3, 3] for pose in poses])
     estimated_data = np.array([model.get_transition_matrix(pose, "estimated")[0:3, 3] for pose in poses])
+    
+    nominal_angles = extract_zyx_euler(np.array([model.get_transition_matrix(pose, "nominal")[0:3, 0:3] for pose in poses]))
+    real_angles = extract_zyx_euler(np.array([model.get_transition_matrix(pose, "real")[0:3, 0:3] for pose in poses]))
+    estimated_angles = extract_zyx_euler(np.array([model.get_transition_matrix(pose, "estimated")[0:3, 0:3] for pose in poses]))
+    
+    nominal_diff_for_print = np.concatenate((np.abs(real_data - nominal_data) * 1000, np.abs(real_angles - nominal_angles)/DEG), axis=1)
+    estimated_diff_for_print = np.concatenate((np.abs(real_data - estimated_data) * 1000, np.abs(real_angles - estimated_angles)/DEG), axis=1)
 
     swap_data = model.estimated_dh[last_indexes[0]][last_indexes[1]]
     model.estimated_dh[last_indexes[0]][last_indexes[1]] = model.nominal_dh[last_indexes[0]][last_indexes[1]]
     estimated_data_prev = np.array([model.get_transition_matrix(pose, "estimated")[0:3, 3] for pose in poses])
     model.estimated_dh[last_indexes[0]][last_indexes[1]] = swap_data
 
-    nominal_diff = (real_data - nominal_data) * 1000 # mm
-    estimated_diff = (real_data - estimated_data) * 1000 # mm
-    estimated_diff_prev = (real_data - estimated_data_prev) * 1000 # mm
+    nominal_diff = np.abs(real_data - nominal_data) * 1000 # mm
+    estimated_diff = np.abs(real_data - estimated_data) * 1000 # mm
+    estimated_diff_prev = np.abs(real_data - estimated_data_prev) * 1000 # mm
 
     nominal_dist = np.linalg.norm(nominal_diff, axis=1).reshape(len(poses), 1)
     estimated_dist = np.linalg.norm(estimated_diff, axis=1).reshape(len(poses), 1)
     estimated_dist_prev = np.linalg.norm(estimated_diff_prev, axis=1).reshape(len(poses), 1)
     
-
+    #delta_coords = (np.abs(real_data - nominal_data) - np.abs(real_data - estimated_data)) * 1000
+    
     # nom_params_errors = model.real_dh - model.nominal_dh
     # est_params_errors = model.real_dh - model.estimated_dh
 
@@ -165,11 +173,14 @@ def check_results(model: hayati_model.HayatiModel, last_indexes: list):
     avg_est_error_prev = np.sum(estimated_dist_prev) / len (estimated_dist_prev)
     
     delta = nominal_dist - estimated_dist
-    printable_res = np.concatenate((poses/DEG, nominal_dist, estimated_dist, delta), axis=1)
+    printable_res = np.concatenate((poses/DEG, nominal_dist, estimated_dist, delta, nominal_diff_for_print, estimated_diff_for_print), axis=1)
+    
     avg_error = np.sum(delta) / len(delta)
-    median = np.array([0, 0, 0, 0, 0, 0, avg_nom_error, avg_est_error, avg_error]).reshape(1, 9)
+    median = np.concatenate( [np.array([0, 0, 0, 0, 0, 0, avg_nom_error, avg_est_error, avg_error]).reshape(1, 9), np.mean(nominal_diff_for_print, axis=0).reshape(1, 6), np.mean(estimated_diff_for_print, axis=0).reshape(1, 6)], axis=1)
     printable_res = np.append(printable_res, median, axis=0)
-    write_dataset(printable_res, "results/ARM95/test_result.csv", ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'delta'],
+    write_dataset(printable_res, "results/ARM95/test_result.csv", ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'delta', 
+                                                                   'x_nom', 'y_nom', 'z_nom', 'alpha_nom', 'beta_nom', 'gamma_nom',
+                                                                   'x_est', 'y_est', 'z_est', 'alpha_est', 'beta_est', 'gamma_est'],
                      tolerance=".3f")
     return avg_nom_error, avg_est_error, avg_est_error_prev
 
@@ -253,25 +264,45 @@ def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: i
     print(f"Previous difference: {(nominal_error_median - estimated_error_prev_median):.6f}\n\nContribution of new: {(estimated_error_prev_median - estimated_error_median):.6f}")
     print(params_error_median)
 
-    data = read_dataset("results/ARM95/test_result.csv", ['q1',	'q2',	'q3',	'q4',	'q5',	'q6',	
-                                                    'd_nom',	'd_est',	'delta'])
+    data = read_dataset("results/ARM95/test_result.csv", ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'delta', 
+                                                                   'x_nom', 'y_nom', 'z_nom', 'alpha_nom', 'beta_nom', 'gamma_nom',
+                                                                   'x_est', 'y_est', 'z_est', 'alpha_est', 'beta_est', 'gamma_est'])
     data_before = data[:, 6]
     data_after = data[:, 7]
     if draw:
         plot_side_by_side_hist(data_before, data_after)
         plot_dh_comparison(np.abs(params_nom_error_median), np.abs(params_est_error_median))
+        plot_all_6_axes(data[:, 9:15], data[:, 15:])
+        
+        
 
 def write_results(model: hayati_model.HayatiModel):
-    tfs = model.get_all_transition_matrixes([0, 0, 0, 0, 0, 0], 'estimated')[1:-1]
+    # Получаем ВСЕ матрицы (включая базовую, чтобы было на что инвертировать первую)
+    all_tfs = model.get_all_transition_matrixes([0, 0, 0, 0, 0, 0], 'estimated')
+    
+    # Наш рабочий срез для суставов (как у тебя и было)
+    tfs = all_tfs[1:-1]
+    
     mcx_params = []
     joint_offsets = []
+    
     for index, tf in enumerate(tfs):
-        offset = tf[:3, 3]
-        rotation = extract_zyx_euler(tf[:3, :3])
+        # Предыдущая глобальная матрица в цепочке находится в all_tfs[index]
+        T_prev = all_tfs[index]
+        
+        # Вычисляем ОТНОСИТЕЛЬНУЮ матрицу перехода между соседними звеньями
+        tf_relative = np.linalg.inv(T_prev) @ tf
+        
+        # Вытаскиваем локальные смещения и повороты
+        offset = tf_relative[:3, 3]
+        rotation = extract_zyx_euler(tf_relative[:3, :3])
+        
+        # Записываем уже адекватные локальные параметры
         mcx_params.append([offset[0], offset[1], offset[2], 0, rotation[1], rotation[2]])
         joint_offsets.append(model.estimated_dh[index][3] - model.nominal_dh[index][3])
 
     res_dict = {"estimated_dh": model.estimated_dh.tolist(), "mcx_params": mcx_params, "offsets": joint_offsets}
+    
     with open(model.results_file, 'w') as file:
         json_str = json.dumps(res_dict)
         file.write(json_str.replace("]], ", "]],\n"))
@@ -543,7 +574,7 @@ def main(args):
             execute_calibration(model)
             write_results(model)
             write_validation_dataset(model, args.is_real)
-            data = read_dataset("results/ARM95/validation_results.csv", ['q1','q2','q3','q4','q5','q6','d_nom','d_est','d_encoder','diff'])
+            data = read_dataset("results/ARM95/validation_results_real.csv", ['q1','q2','q3','q4','q5','q6','d_nom','d_est','d_encoder','diff'])
             data_before = data[:, 6]
             data_after = data[:, 7]
             if args.draw:
