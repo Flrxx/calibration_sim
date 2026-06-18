@@ -60,9 +60,9 @@
   "encoder_abs_tolerance_percent": 0.08,
   "encoder_resolution_mm": 0.05,
   "max_z_angle": 3.14,  
-  "generation_output": "datasets/ARM95/wire/generation_output.csv",
-  "contribution_dataset": "datasets/ARM95/wire/contribution_dataset.csv",
-  "calibration_dataset": "datasets/ARM95/wire/calibration_dataset.csv",
+  "generation_output": "datasets/ARM95/wire/generation/generation_output.csv",
+  "contribution_dataset": "datasets/ARM95/wire/contribution/contribution_dataset.csv",
+  "calibration_dataset": "datasets/ARM95/wire/calibration/calibration_dataset.csv",
   "test_dataset_file": "datasets/ARM95/absolute/random_samples.csv",
   "results_file": "results/ARM95/results.json",
 

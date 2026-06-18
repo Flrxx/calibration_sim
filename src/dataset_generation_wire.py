@@ -66,48 +66,8 @@ def calculate_optimal_position(model: hayati_model.HayatiModel, i_target: int, a
         return -(abs(output[i_target]) /( sqrt(np.sum(output[i_target + 1:]**2)) + 0.01  + sqrt(np.sum(output[0:i_target]**2/50))    ) )
 
     cons = []
-    if border == -1:
-        border = i_target + 1
-
-    def past_and_future_limits(angles):
-        contribution = calculate_contribution(model, angles)
-        if i_target > 0:
-            past_values = contribution[:i_target]
-            past_upper = prev_eps - past_values
-            past_lower = past_values + prev_eps
-        else:
-            past_upper = [0]
-            past_lower = [0]
-        if border > 0 and border != i_target + 1:            
-            border_values = contribution[i_target + 1:border] # +!1!!!
-            border_upper = border_eps - border_values
-            border_lower = border_values + border_eps
-        else:
-            border_upper = [0]
-            border_lower = [0]
-
-        if i_target < len(model.error_list) - 1:
-            future_values = contribution[border:] # +!1!!!
-            future_upper = future_eps - future_values
-            future_lower = future_values + future_eps
-        else:
-            future_upper = [0]
-            future_lower = [0]
-        
-        return np.concatenate([past_upper, past_lower, border_upper, border_lower, future_upper, future_lower])        
-    cons.append({'type': 'ineq', 'fun': past_and_future_limits})
-
-    # if border < len(model.error_list) - 1:
-    #     def future_limits(angles):
-    #         upper = future_eps - past_values
-    #         lower = past_values + future_eps
-    #         return np.concatenate([upper, lower])
-    #     cons.append({'type': 'ineq', 'fun': future_limits})
-
-    def value_floor(angles):
-        contribution = calculate_contribution(model, angles)
-        return abs(contribution[i_target]) - max(abs(contribution[i_target + 1:]))
-    #cons.append({'type': 'ineq', 'fun': value_floor})
+    # if border == -1:
+    #     border = i_target + 1
 
     def wire_limits(angles):    
         # z limits
@@ -305,7 +265,7 @@ def generate_samples(model: hayati_model.HayatiModel, i_target: int, user_joint_
     res = generate_single_layer(model, i_target, user_joint_mask, tries_count, prev_eps, future_eps, angle_diff, len_diff, erase_previous, border, border_eps)
     printable_res = [np.concatenate((s / DEG, [i_target, o], c.flatten())).tolist() for s, c, o in zip(res["samples"], res["contributions"], res["objective_values"])]
     printable_res.sort(key = lambda x: x[7 ]) # + i_target
-    write_dataset(printable_res, model.generation_output, model.fieldnames_options["wire_contributions"], tolerance = ".3f")
+    write_dataset(printable_res, model.generation_output, model.fieldnames_options["wire_contributions"], tolerance = 3)
     print(f"Left {len(printable_res)} poses")
 
 def measure_real_distance(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray]):
@@ -339,7 +299,7 @@ def make_calibration_dataset(model: hayati_model.HayatiModel):
     model.jac_DH_0 = calculate_jac_DH_params(model, model.zero_wire_angles)
     dataset = measure_all_distances(model)
     dataset[:, 0:6] *= DEG
-    write_dataset(dataset, model.calibration_dataset, model.fieldnames_options["wire_samples"], tolerance=".6f") 
+    write_dataset(dataset, model.calibration_dataset, model.fieldnames_options["wire_samples"], tolerance=6) 
 
 def vary_joints(model: hayati_model.HayatiModel, user_joint_mask: Union[list, np.ndarray], tries_count: int):
 
@@ -407,7 +367,7 @@ def correct_poses(model: hayati_model.HayatiModel):
         new_samples[i, 7:] = calculate_contribution(model, new_samples[i, :6])
     
     new_samples[:, :6] /= DEG
-    write_dataset(new_samples, model.contribution_dataset, model.fieldnames_options["wire_contributions"], tolerance=".3f") 
+    write_dataset(new_samples, model.contribution_dataset, model.fieldnames_options["wire_contributions"], tolerance=3) 
     print("Done")
 
 def get_dataset_for_validation(model: hayati_model.HayatiModel, tries_num: int, angle_limit, wire_limits, angle_diff):
@@ -439,7 +399,7 @@ def get_dataset_for_validation(model: hayati_model.HayatiModel, tries_num: int, 
             i += 1
     printable_res[:, :6] /= DEG
     printable_res[:, 6:] *= 1000
-    write_dataset(printable_res, "datasets/ARM95/validation_dataset.csv", model.fieldnames_options["test_result"], tolerance=".3f")
+    write_dataset(printable_res, "datasets/ARM95/validation_dataset.csv", model.fieldnames_options["test_result"], tolerance=3)
 
 #def auto_collect_layer
 

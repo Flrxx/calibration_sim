@@ -181,7 +181,7 @@ def check_results(model: hayati_model.HayatiModel, last_indexes: list):
     write_dataset(printable_res, "results/ARM95/test_result.csv", ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'delta', 
                                                                    'x_nom', 'y_nom', 'z_nom', 'alpha_nom', 'beta_nom', 'gamma_nom',
                                                                    'x_est', 'y_est', 'z_est', 'alpha_est', 'beta_est', 'gamma_est'],
-                     tolerance=".3f")
+                     tolerance=3)
     return avg_nom_error, avg_est_error, avg_est_error_prev
 
 def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate, is_real=False):
@@ -354,7 +354,7 @@ def write_validation_dataset(model: hayati_model.HayatiModel, is_real=False):
     output_dataset[:, 6:] *= 1000
 
 
-    write_dataset(output_dataset, source_path, model.fieldnames_options["test_result"], tolerance = ".3f")
+    write_dataset(output_dataset, source_path, model.fieldnames_options["test_result"], tolerance = 3)
     #print("Done")
 
 def _calibrate_list_of_dh(model: hayati_model.HayatiModel, i_target, dataset, dh_list):
@@ -487,7 +487,7 @@ def rate_poses_contributions(model: hayati_model.HayatiModel, i_target, num_trie
         target_poses, 
         "datasets/ARM95/wire/positive_contributions.csv", 
         model.fieldnames_options["wire_contributions"], 
-        tolerance=".3f"
+        tolerance=3
     )
     
     return target_poses

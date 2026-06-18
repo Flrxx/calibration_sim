@@ -63,7 +63,7 @@
   "max_z_angle": 3.14,  
   "generation_output": "datasets/ARM95/wire/generation_output.csv",
   "contribution_dataset": "datasets/ARM95/wire/third_try_contribution_dataset.csv",
-  "calibration_dataset": "datasets/ARM95/wire/calibration_dataset.csv",
+  "calibration_dataset": "datasets/ARM95/wire/calibration_dataset_last.csv",
   "test_dataset_file": "datasets/ARM95/absolute/random_samples.csv",
   "results_file": "results/ARM95/results.json",
 

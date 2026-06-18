@@ -3,13 +3,14 @@ import csv
 from typing import Any
 import os
 
-def format_value(value: Any, tolerance: str = ".8f") -> str:
+def format_value(value: Any, tolerance: int = 8) -> str:
     """Вспомогательная функция для форматирования значений."""
     # Если это число (int, float, np.number), форматируем с точностью
     if isinstance(value, (int, float, np.number)):
         # Если нужно сохранять логику «ноль как пустая строка» (из вашего комментария):
         # if np.isclose(value, 0, atol=1e-4): return ""
-        return f"{value:{tolerance}}"
+        toleranse_str = "." + str(tolerance) + "f"
+        return f"{value:{toleranse_str}}"
     
     # Если это строка или что-то другое, возвращаем как есть (приведя к str)
     return str(value) if value is not None else ""
@@ -24,7 +25,7 @@ def write_dataset(dataset: np.ndarray, filename: str, fieldnames: list[str], tol
                 for index, name in enumerate(fieldnames)
             })
 
-def add_line_csv(row: np.ndarray | list, filename: str, fieldnames: list[str], tolerance: str = ".8f"):
+def add_line_csv(row: np.ndarray | list, filename: str, fieldnames: list[str], tolerance: int=8):
     file_exists = os.path.isfile(filename) and os.path.getsize(filename) > 0
 
     with open(filename, 'a', newline='', encoding='utf-8') as csvfile:
@@ -61,3 +62,4 @@ def read_dataset(filename: str, fieldnames: list[str]) -> np.ndarray:
             
     # dtype='object' позволяет массиву NumPy хранить одновременно и строки, и числа
     return np.array(rows, dtype=object)
+    
