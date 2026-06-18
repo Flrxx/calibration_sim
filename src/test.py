@@ -6,26 +6,26 @@ import hayati_model
 
 def replace_column_by_lookup(array: np.ndarray, i: int, replacement_list: list) -> np.ndarray:
     """
-    Берет числа из i-го столбца как индексы и заменяет их 
-    на соответствующие элементы из replacement_list.
-    
-    :param array: Исходный двумерный массив numpy
-    :param i: Индекс столбца, в котором лежат числовые id
-    :param replacement_list: Список строк/значений для подстановки
-    :return: Новый массив с замененными данными
+    Заменяет неотрицательные числа в i-м столбце на элементы из списка по индексу.
+    Отрицательные числа остаются без изменений.
     """
-    # 1. Приводим массив к типу object, чтобы он мог хранить строки
+    # 1. Приводим массив к типу object для поддержки разных типов данных
     modified_array = array.astype(object)
     
-    # 2. Вытаскиваем i-й столбец и превращаем его в чистые целые числа (индексы)
-    # Используем .round().astype(int), чтобы избежать проблем с float (например, 2.0 -> 2)
-    indices = modified_array[:, i].astype(float).round().astype(int)
+    # 2. Получаем значения целевого столбца в виде чисел с плавающей точкой
+    col_values = modified_array[:, i].astype(float)
     
-    # 3. Превращаем список подстановок в массив numpy типа object
+    # 3. Создаем маску: True только для элементов >= 0
+    mask = col_values >= 0
+    
+    # 4. Превращаем только неотрицательные значения в целые числа-индексы
+    indices = col_values[mask].round().astype(int)
+    
+    # 5. Готовим список подстановок
     lookup_array = np.array(replacement_list, dtype=object)
     
-    # 4. Магия NumPy: подставляем элементы по индексам «одним махом»
-    modified_array[:, i] = lookup_array[indices]
+    # 6. Магия NumPy: меняем значения только там, где mask == True
+    modified_array[mask, i] = lookup_array[indices]
     
     return modified_array
 
@@ -36,7 +36,7 @@ if __name__ == "__main__":
     with open("src/config/ARM95_calibration.json", 'r') as config_file:
         config = json.load(config_file)
     model = hayati_model.HayatiModel(config)
-    start_dataset = read_dataset("datasets/ARM95/wire/calibration_dataset.csv", ['q1','q2','q3','q4','q5','q6','index','d'])
+    start_dataset = read_dataset("datasets/ARM95/wire/contribution_dataset.csv", model.fieldnames_options["wire_contributions"])
     end_dataset = replace_column_by_lookup(start_dataset, 6, model.error_list)
     
-    write_dataset(end_dataset, "datasets/ARM95/wire/calibration_dataset.csv", ['q1','q2','q3','q4','q5','q6','index','d'])
+    write_dataset(end_dataset, "datasets/ARM95/wire/contribution_dataset.csv", model.fieldnames_options["wire_contributions"], tolerance=".3f")

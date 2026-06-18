@@ -328,7 +328,8 @@ def measure_all_distances(model: hayati_model.HayatiModel, dataset=[]):
     if len(dataset) == 0:
         dataset = read_dataset(model.contribution_dataset, model.fieldnames_options['wire_contributions'])[:, 0:8]
         dataset[:, 0:6] *= DEG
-    mask = dataset[:, 6] >= 0
+    #mask = dataset[:, 6].astype(int) >= 0
+    mask = np.array([isinstance(val, str) for val in dataset[:, 6]])
     dataset = dataset[mask]
     for sample in dataset:
         sample[7] = measure_real_distance(model, sample[0:6])

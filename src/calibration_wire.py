@@ -14,7 +14,7 @@ from csv_routines import read_dataset, write_dataset
 from multiprocessing import Pool, cpu_count
 import copy
 from math_routines import DEG
-from graph import plot_side_by_side_hist, plot_dh_comparison, plot_all_6_axes
+from graph import plot_side_by_side_hist, plot_dh_comparison, plot_all_6_axes, plot_calibration_errors_from_data
 import itertools
 
 
@@ -262,7 +262,9 @@ def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: i
 
     print(f"Nominal error: {nominal_error_median:.6f}\nAfter calibration: {estimated_error_median:.6f}\n\nDifference: {(nominal_error_median - estimated_error_median):.6f}")
     print(f"Previous difference: {(nominal_error_median - estimated_error_prev_median):.6f}\n\nContribution of new: {(estimated_error_prev_median - estimated_error_median):.6f}")
-    print(params_error_median)
+    #printable_res = {param: value for (param, value) in zip(model.error_list, params_error_median)}
+    for i, value in enumerate(params_error_median):
+        print(f"{model.error_list[i]}: {value:.3f}")
 
     data = read_dataset("results/ARM95/test_result.csv", ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'delta', 
                                                                    'x_nom', 'y_nom', 'z_nom', 'alpha_nom', 'beta_nom', 'gamma_nom',
@@ -309,8 +311,8 @@ def write_results(model: hayati_model.HayatiModel):
 
     nom_params = model.get_readable_params("nominal")
     est_params = model.get_readable_params("estimated")
-    print(nom_params[:, :4])
-    print()
+    #print(nom_params[:, :4])
+    #print()
     print(est_params[:, :4])
 
 def validate_wire(model: hayati_model.HayatiModel, validation_dataset, is_real):
@@ -353,7 +355,7 @@ def write_validation_dataset(model: hayati_model.HayatiModel, is_real=False):
 
 
     write_dataset(output_dataset, source_path, model.fieldnames_options["test_result"], tolerance = ".3f")
-    print("Done")
+    #print("Done")
 
 def _calibrate_list_of_dh(model: hayati_model.HayatiModel, i_target, dataset, dh_list):
     copy_model = copy.deepcopy(model)
@@ -575,10 +577,9 @@ def main(args):
             write_results(model)
             write_validation_dataset(model, args.is_real)
             data = read_dataset("results/ARM95/validation_results_real.csv", ['q1','q2','q3','q4','q5','q6','d_nom','d_est','d_encoder','diff'])
-            data_before = data[:, 6]
-            data_after = data[:, 7]
+            data = data[:-1, :]
             if args.draw:
-                plot_side_by_side_hist(data_before, data_after)
+                plot_calibration_errors_from_data(data)
         else:
             make_many_calibration_attempts(model, args.num_of_tries, args.generate, args.draw)  # ,params_error
             
@@ -599,7 +600,7 @@ def main(args):
         combination, score = find_best_combination(model, calibration_data, validation_data)
         print(f"Best combination: {combination}\n Score: {score:.3f}")
     
-    print("Done")
+    #print("Done")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
