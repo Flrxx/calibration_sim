@@ -9,7 +9,10 @@ import copy
 from math_routines import DEG
 from scipy.optimize import minimize
 
-np.set_printoptions(precision=3, suppress=True, formatter={'all': lambda x: f'{x:0.3f}'})
+np.set_printoptions(
+    suppress=True, 
+    formatter={'all': lambda x: f'{x:0.3f}' if isinstance(x, (int, float, np.number)) else str(x)}
+)
 
 class HayatiModel:
     def __init__(self, config):

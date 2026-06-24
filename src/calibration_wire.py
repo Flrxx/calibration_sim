@@ -211,9 +211,7 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate, is_
         new_nom, new_est, new_esp_prev = check_results(copy_model, last_indexes)
         local_nominal_error += new_nom
         local_estimated_error += new_est
-        local_estimated_error_prev += new_esp_prev
-        
-        
+        local_estimated_error_prev += new_esp_prev        
     
     #print(local_param_errors)
     local_param_errors /= (tries_count)
@@ -394,13 +392,15 @@ def _rate_batch_worker(model: hayati_model.HayatiModel, dataset, i_target, pose_
             
     return new_error_list
 
-def rate_poses_contributions(model: hayati_model.HayatiModel, i_target, num_tries, floor):
+def rate_poses_contributions(model: hayati_model.HayatiModel, target_param, num_tries, floor):
     dataset_orig = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
     dataset_orig[:, 0:6] *= DEG
-    positive_mask = dataset_orig[:, 6] >= 0
-    dataset_orig = dataset_orig[positive_mask]
+    #positive_mask = dataset_orig[:, 6] >= 0
+    mask = np.array([isinstance(val, str) for val in dataset_orig[:, 6]])
+    dataset_orig = dataset_orig[mask]
 
-    poses_mask = dataset_orig[:, 6] == i_target
+    poses_mask = dataset_orig[:, 6] == target_param
+    i_target = model.error_list.index(target_param)
     target_poses = dataset_orig[poses_mask]
     print(f"Starting analysis of {len(target_poses)} poses across {num_tries} tries...")
     dataset = measure_all_distances(model, dataset_orig)
@@ -584,7 +584,7 @@ def main(args):
             make_many_calibration_attempts(model, args.num_of_tries, args.generate, args.draw)  # ,params_error
             
     elif args.mode == "rate":
-        rate_poses_contributions(model, args.i_target, args.num_of_tries, args.floor)
+        rate_poses_contributions(model, args.target_param, args.num_of_tries, args.floor)
   
     
     elif args.mode == "test":
@@ -612,6 +612,7 @@ if __name__ == "__main__":
     parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=1)
     parser.add_argument("-i", "--i_target", help="", type=int, default=10)
     parser.add_argument("-f", "--floor", help="", type=float, default=0.001)
+    parser.add_argument("-t", "--target_param", help="", type=str, default="a_6")
 
     args = parser.parse_args()
     main(args)

@@ -13,6 +13,7 @@ from csv_routines import write_dataset, add_line_csv, read_dataset
 from multiprocessing import Pool, cpu_count
 import copy
 from math_routines import DEG
+from dataset_generation_wire import calculate_wire_direction
 
 def get_expected_deltas(model: hayati_model.HayatiModel):
     """
@@ -115,24 +116,6 @@ def find_best_poses_monte_carlo(model, target_param, already_calibrated_params, 
             
     return best_poses # Возвращаем список кортежей: [(snr, angles), ...]
 
-def calculate_contribution(model, angles: Union[list, np.ndarray]):
-    jac_DH = calculate_jac_DH_params(model, angles)
-    # Предполагается наличие calculate_wire_direction
-    wire_direction = np.array([1, 0, 0]) # ЗАГЛУШКА
-    contribution = np.dot(wire_direction.T, jac_DH) 
-    return contribution.flatten()
-
-def calculate_jac_DH_params(model, angles: Union[list, np.ndarray], eps = 1e-6):
-    jac_DH = np.zeros((3, len(model.error_list)))
-    initial_coords = model.get_transition_matrix(angles, "nominal")[0:3, 3]
-    for i, e in enumerate(model.error_list):        
-        model.vary_nominal_dh(e, eps)                                     
-        new_coords = model.get_transition_matrix(angles, "nominal")[0:3, 3]
-        for j in range(3):
-            jac_DH[j, i] = (new_coords[j] - initial_coords[j]) / eps
-        model.vary_nominal_dh(e, -eps)                                    
-    return jac_DH
-
 # ==========================================
 # НОВАЯ ФУНКЦИЯ ДЛЯ ГЕНЕРАЦИИ И ЗАПИСИ В CSV
 # ==========================================
@@ -171,14 +154,40 @@ def generate_samples_monte_carlo(model, target_param, already_calibrated_params,
     return printable_res
 
 # --- ОРИГИНАЛЬНАЯ ФУНКЦИЯ ДЛЯ ВЫЗОВА В calculate_expected_influence_mm ---
-def calculate_contribution(model, angles: Union[list, np.ndarray]):
+def calculate_contribution(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray]):
     jac_DH = calculate_jac_DH_params(model, angles)
-    # Предполагается наличие calculate_wire_direction
-    wire_direction = np.array([1, 0, 0]) # ЗАГЛУШКА для примера
-    # contribution = np.dot(wire_direction.T, jac_DH - model.jac_DH_0)
-    contribution = np.dot(wire_direction.T, jac_DH) # Для примера
-    # contribution[0, model.angle_idexes] *= DEG * 1000 # mm/deg
+    wire_direction = calculate_wire_direction(model, angles)
+    contribution = np.dot(wire_direction.T, jac_DH - model.jac_DH_0)
+    contribution[0, model.angle_idexes] *= DEG * 1000 # mm/deg
     return contribution.flatten()
+
+# def calculate_contribution(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray]):
+#     jac_DH = calculate_jac_DH_params(model, angles)
+#     wire_direction = calculate_wire_direction(model, angles)
+    
+#     # Чистая математическая проекция Якобиана на линию троса
+#     base_contribution = np.dot(wire_direction.T, jac_DH - model.jac_DH_0).flatten()
+    
+#     # Формируем вектор реальных амплитуд (ожидаемых ошибок)
+#     deltas = np.zeros(len(model.error_list))
+    
+#     for i, param_name in enumerate(model.error_list):
+#         if param_name.startswith('a_'):
+#             deltas[i] = model.a_delta * 1000
+#         elif param_name.startswith('d_'):
+#             deltas[i] = model.d_delta * 1000
+#         elif param_name.startswith('alpha_'):
+#             deltas[i] = model.alpha_delta / DEG * DEG * 1000
+#         elif param_name.startswith('theta_'):
+#             deltas[i] = model.theta_delta / DEG * DEG * 1000
+#         elif param_name.startswith('beta_'):
+#             deltas[i] = model.beta_delta / DEG * DEG * 1000
+#         else:
+#             deltas[i] = 1.0
+            
+#     # Перемножаем градиент на допуск (мм/мм * мм ИЛИ м/рад * рад * 1000)
+#     # Итог: физическое влияние каждого параметра в миллиметрах
+#     return base_contribution * deltas
 
 def calculate_jac_DH_params(model, angles: Union[list, np.ndarray], eps = 1e-6):
     jac_DH = np.zeros((3, len(model.error_list)))
@@ -191,33 +200,59 @@ def calculate_jac_DH_params(model, angles: Union[list, np.ndarray], eps = 1e-6):
         model.vary_nominal_dh(e, -eps)                                    
     return jac_DH
 
+def generate_wrist_block_dataset(model, num_poses=50, min_distance_rad=0.3):
+    """
+    Генерирует датасет исключительно для Блока Кисти (суставы 4, 5, 6).
+    Суставы 1, 2, 3 жестко заморожены в zero_wire_angles.
+    """
+    print("\n--- Сбор данных: Блок Кисти (суставы 4, 5, 6) ---")
+    valid_poses = []
+    attempts = 0
+    all_results = []
+    
+    while len(valid_poses) < num_poses and attempts < 100000:
+        attempts += 1
+        
+        # Начинаем с замороженной нулевой позы
+        q_rand = np.copy(model.zero_wire_angles)
+        
+        # Размораживаем 4, 5 и 6 суставы (индексы 3, 4, 5)
+        for j in range(3, 6):
+            q_rand[j] = np.random.uniform(low=-np.pi, high=np.pi)
+            
+        # Проверяем физические лимиты (strict=True, чтобы угол не превышал 75 град)
+        if not is_pose_valid(model, q_rand):
+            continue
+            
+        # Защита от слишком близких/похожих точек
+        is_far_enough = True
+        for selected_pose in valid_poses:
+            if np.linalg.norm(q_rand - selected_pose) < min_distance_rad:
+                is_far_enough = False
+                break
+                
+        if is_far_enough:
+            valid_poses.append(q_rand)
+            
+    print(f"Найдено {len(valid_poses)}/{num_poses} разнообразных поз за {attempts} попыток.")
+
+    # Формируем структуру данных (для реального робота вместо 0.0 нужно будет подставить реальную длину)
+    for angles in valid_poses:
+        contribution = calculate_contribution(model, angles)
+        row = (angles / DEG).tolist() + ["free_4_to_6", 0.0] + contribution.flatten().tolist()
+        all_results.append(row)
+        
+    return all_results
+    
 def main(args):
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
     model = hayati_model.HayatiModel(config)
     model.jac_DH_0 = calculate_jac_DH_params(model, model.zero_wire_angles)
-    
-    calibration_order = [
-        "a_6"
-    ]
-    
-    calibrated_so_far = []
-    all_results = []
 
-    for param in calibration_order:
-        # Генерируем точки для параметра
-        param_results = generate_samples_monte_carlo(
-            model, 
-            target_param=param, 
-            already_calibrated_params=calibrated_so_far,
-            num_candidates=15000, # Можно увеличить для сложных параметров
-            top_k=50
-        )
-        all_results.extend(param_results)
-        calibrated_so_far.append(param) # Добавляем параметр в список "известных"
+    wrist_dataset = generate_wrist_block_dataset(model, num_poses=150)
 
-# И уже после сбора всех точек для всех параметров записываем общий CSV:
-    write_dataset(all_results, model.generation_output, model.fieldnames_options["wire_contributions"], tolerance=3)
+    write_dataset(wrist_dataset, model.generation_output, model.fieldnames_options["wire_contributions"], tolerance=3)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

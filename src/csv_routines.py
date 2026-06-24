@@ -8,17 +8,18 @@ def format_value(value: Any, tolerance: int = 8) -> str:
     # Если это число (int, float, np.number), форматируем с точностью
     if isinstance(value, (int, float, np.number)):
         # Если нужно сохранять логику «ноль как пустая строка» (из вашего комментария):
-        # if np.isclose(value, 0, atol=1e-4): return ""
-        toleranse_str = "." + str(tolerance) + "f"
-        return f"{value:{toleranse_str}}"
+        #if np.isclose(value, 0, atol=1e-4): return ""
+        #toleranse_str = "." + str(tolerance) + "f"
+        return f"{value:.{tolerance}f}"
     
     # Если это строка или что-то другое, возвращаем как есть (приведя к str)
     return str(value) if value is not None else ""
 
-def write_dataset(dataset: np.ndarray, filename: str, fieldnames: list[str], tolerance: str = ".8f"):
+def write_dataset(dataset: np.ndarray, filename: str, fieldnames: list[str], tolerance: int = 8):
     with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
+        #toleranse_str = "." + str(tolerance) + "f"
         for row in dataset:
             writer.writerow({
                 name: format_value(row[index], tolerance) 
