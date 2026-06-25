@@ -74,6 +74,8 @@ class HayatiModel:
         self.angle_limit_z = config["angle_limit_z_deg"] * DEG
         self.angle_limit_wire = config["angle_limit_wire_deg"] * DEG
 
+        self.dynamic_constrains_deg = config["dynamic_constraints_deg"]
+
         self.distance_delta = config["distance_delta_mm"] / 1000
         self.angle_delta = config["angle_delta_deg"] * DEG
         
@@ -240,9 +242,69 @@ class HayatiModel:
         res[mask] *= 1000   
         return res 
     
-    # Metrics and validation routines
-    def init_metrics(self):
-        self.cond = None
-        self.norm = None
-        self.max_x_error = self.max_y_error = self.max_z_error = self.max_dist_error = 0
-        self.min_x_error = self.min_y_error = self.min_z_error = self.min_dist_error = BIG_NUMBER
+    def violates_dynamic_limits(self, q):
+        """Проверяет готовую позу на нарушение правил коллизий"""
+        for rule in self.dynamic_constrains_deg:
+            cond_j = rule["if_joint"] - 1
+            target_j = rule["then_joint"] - 1
+
+            cond_min = rule["if_range_deg"][0] * DEG
+            cond_max = rule["if_range_deg"][1] * DEG
+
+            if cond_min <= q[cond_j] <= cond_max:
+                target_min = rule["then_range_deg"][0] * DEG
+                target_max = rule["then_range_deg"][1] * DEG
+
+                if not (target_min <= q[target_j] <= target_max):
+                    return True # Правило нарушено, поза недостижима
+        return False
+
+
+    def get_dynamic_limits(self, q_current, target_joint_idx, base_low_rad, base_high_rad):
+        """
+        Проверяет правила и возвращает суженные лимиты для целевого сустава 
+        на основе текущего состояния других суставов.
+        """
+        low, high = base_low_rad, base_high_rad
+        
+        for rule in self.dynamic_constrains_deg:
+            if rule["then_joint"] - 1 == target_joint_idx:
+                cond_j = rule["if_joint"] - 1
+                cond_min = rule["if_range_deg"][0] * DEG
+                cond_max = rule["if_range_deg"][1] * DEG
+
+                # Проверяем, попадает ли управляющий сустав в триггерную зону
+                if cond_min <= q_current[cond_j] <= cond_max:
+                    rule_min = rule["then_range_deg"][0] * DEG
+                    rule_max = rule["then_range_deg"][1] * DEG
+                    
+                    # Сужаем границы (берем пересечение базовых и условных лимитов)
+                    low = max(low, rule_min)
+                    high = min(high, rule_max)
+                    
+        return low, high
+    
+    def is_pose_valid(self, angles):
+        # НОВОЕ: Сначала проверяем динамические лимиты (это быстро)
+        # if self.violates_dynamic_limits(angles):
+        #     return False
+            
+        matrix = self.get_transition_matrix(angles, "nominal")
+        z_dir = matrix[0:3, 2]
+        wire = matrix[0:3, 3] - self.zero_offset_nominal
+        wire_len = np.linalg.norm(wire) 
+        
+        if wire_len < self.wire_limits[0] or wire_len > self.wire_limits[1]: return False
+
+        wire_norm = wire / wire_len
+        scalar_wire_forward = np.vdot(wire_norm, self.zero_wire_direction)
+        if scalar_wire_forward <= 0: return False
+            
+        alpha = acos(np.clip(scalar_wire_forward, -1.0, 1.0))
+        if alpha > self.angle_limit_wire: return False
+
+        scalar_z = np.vdot(-wire_norm, z_dir)
+        alpha_z = acos(np.clip(scalar_z, -1.0, 1.0))
+        if alpha_z > self.angle_limit_z: return False
+            
+        return True

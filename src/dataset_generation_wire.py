@@ -62,13 +62,17 @@ def calculate_optimal_position(model: hayati_model.HayatiModel, numerical_target
     
     def objective(angles):
         output = calculate_contribution(model, angles)
+
+        if model.violates_dynamic_limits(angles):
+            return 1e6  # Return a large penalty value if the pose violates dynamic limits
         
         return -(abs(output[numerical_target_index]) /( sqrt(np.sum(output[numerical_target_index + 1:]**2)) + 0.01  + sqrt(np.sum(output[0:numerical_target_index]**2/50))    ) )
 
     cons = []
 
-    def wire_limits(angles):    
-        # z limits
+    def wire_limits(angles):
+    #     return model.is_pose_valid(angles)    
+        #z limits
         matrix = model.get_transition_matrix(angles, "nominal")
         z_dir = matrix[0:3, 2]
         scalar_z = np.vdot(z_dir, -model.zero_wire_direction)
@@ -162,6 +166,7 @@ def generate_single_layer(model: hayati_model.HayatiModel, i_target, start_joint
     angles = model.zero_wire_angles.copy()
     bounds = np.array([[angles[i], angles[i]] for i in range(6)])
 
+    #start_joint = 0
     for j in range(start_joint, 6):
         bounds[j] = model.bounds[j]
 
@@ -182,6 +187,7 @@ def generate_single_layer(model: hayati_model.HayatiModel, i_target, start_joint
     #     print(f"Warning: only {i} valid poses generated out of {tries_count} requested.")
 
     initial_angles = generate_initial_poses(model, i_target, start_joint, tries_count)
+    print(f"Found {len(initial_angles)} initial poses")
 
     tasks = []
     for i in range(min(num_cores, tries_count)):
@@ -195,6 +201,11 @@ def generate_single_layer(model: hayati_model.HayatiModel, i_target, start_joint
 
     with Pool(processes=num_cores) as pool:
         results = pool.starmap(_generate_batch, tasks)
+
+    # scores = []
+    # for task in tasks:
+    #     # *task распаковывает кортеж аргументов в функцию
+    #     scores.append(_generate_batch(*task))
     
     lenght = 0
     for res in results:
@@ -370,10 +381,19 @@ def generate_initial_poses(model: hayati_model.HayatiModel, target_param, start_
         attempts += 1
         q_rand = np.copy(model.zero_wire_angles)
         
-        # Генерируем точки строго в пределах заданных лимитов
-        for j in range(start_idx, 6):
-            q_rand[j] = np.random.uniform(low=model.joint_limits_general_l[j], high=model.joint_limits_general_h[j])
+        # # Генерируем точки строго в пределах заданных лимитов
+        # for j in range(start_idx, 6):
+        #     q_rand[j] = np.random.uniform(low=model.joint_limits_general_l[j], high=model.joint_limits_general_h[j])
             
+        for j in range(start_idx, 6):
+            dyn_low, dyn_high = model.get_dynamic_limits(q_rand, j, model.joint_limits_general_l[j], model.joint_limits_general_h[j])
+            
+            # Защита от нелогичных правил (если min > max)
+            if dyn_low > dyn_high:
+                dyn_low, dyn_high = dyn_high, dyn_low
+                
+            q_rand[j] = np.random.uniform(low=dyn_low, high=dyn_high)
+
         if is_pose_valid(model, q_rand):
             contrib = calculate_contribution(model, q_rand)
             signal = abs(contrib[target_idx])
@@ -489,12 +509,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: ARM95.json", default="src/config/ARM95_calibration.json")
     parser.add_argument("-m", "--mode", help="Selected mode: 'generation' or 'check'. Default: 'generation'", default="generation")
-    parser.add_argument("-s_j", "--start_joint", help="1-6", type=int, default=4)
-    parser.add_argument("-e", "--erase_previous", help="Erase previous generation result. Default: 'false'", default="false")
-    parser.add_argument("-i", "--target_index", help="", type=str, default="alpha_6")
-    parser.add_argument("-n", "--tries_count", help="Number of tries. Default: 10", type=int, default=0)
-    parser.add_argument("-a", "--angle_diff", help="Angle difference between poses. Default: 5", type=float, default=7)
-    parser.add_argument("-l", "--len_diff", help="Lenght difference between poses, mm. Default: 2", type=float, default=0)
+    parser.add_argument("-s_j", "--start_joint", help="1-6", type=int, default=1)
+    parser.add_argument("-e", "--erase_previous", help="Erase previous generation result. Default: 'false'", default="true")
+    parser.add_argument("-i", "--target_index", help="", type=str, default="theta_6")
+    parser.add_argument("-n", "--tries_count", help="Number of tries. Default: 10", type=int, default=1000)
+    parser.add_argument("-a", "--angle_diff", help="Angle difference between poses. Default: 5", type=float, default=5)
+    parser.add_argument("-l", "--len_diff", help="Lenght difference between poses, mm. Default: 2", type=float, default=5)
     parser.add_argument("-p", "--prev_eps", help="Epsilon for previous params. Default: 0.005", type=float, default=100)
     parser.add_argument("-f", "--future_eps", help="Epsilon for future params. Default: 0.0004", type=float, default=100)
 

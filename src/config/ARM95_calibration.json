@@ -81,6 +81,15 @@
   "angle_limit_wire_deg": 75,
   "angle_limit_z_deg": 75,
 
+  "dynamic_constraints_deg": [
+    {
+        "if_joint": 1,                
+        "if_range_deg": [-179, -180],
+        "then_joint": 4,
+        "then_range_deg": [-180, 180]
+    }
+  ], 
+
   "distance_delta_mm": 1.0,
   "angle_delta_deg": 1.0,
   

@@ -1,15 +1,20 @@
 import numpy as np
 from math import cos, sin, pi, sqrt, atan2, asin, log10, acos, copysign
 from typing import Union
-from scipy.optimize import minimize_scalar, minimize, Bounds
+from scipy.optimize import minimize_scalar, minimize, Bounds, least_squares
+from matplotlib import pyplot as plt
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 import argparse
+import random
 import json
 import time
 import hayati_model
 from math_routines import extract_zyx_euler
 from random import uniform
 from dataset_generation_absolute import generate_real_dh
-from dataset_generation_wire import measure_all_distances, calculate_distance
+from dataset_generation_wire import measure_all_distances, calculate_distance, calculate_contribution
 from csv_routines import read_dataset, write_dataset
 from multiprocessing import Pool, cpu_count
 import copy
@@ -126,6 +131,16 @@ def calibrate_single_param(model: hayati_model.HayatiModel, dataset: Union[np.nd
 
     res = minimize(loss_function, x0=model.nominal_dh[param_num][param_letter_num], 
                    method='SLSQP', tol=1e-16)#, bounds=bounds)
+    
+    # res = least_squares(
+    #     loss_function, 
+    #     x0=model.nominal_dh[param_num][param_letter_num], 
+    #     method='lm', 
+    #     x_scale='jac', 
+    #     ftol=1e-10, 
+    #     xtol=1e-10,
+    #     verbose=0
+    # )
     return res
 
 def calculate_estimated_distance(model: hayati_model.HayatiModel, angles: Union[np.ndarray, list], zero_pos: Union[np.ndarray, list]):
@@ -492,6 +507,102 @@ def rate_poses_contributions(model: hayati_model.HayatiModel, target_param, num_
     
     return target_poses
 
+def cluster_and_visualize_poses(model: hayati_model.HayatiModel, target_param, n_clusters=5):
+    """
+    Разбивает массив точек на кластеры, строит PCA-проекцию и выводит 
+    исходный номер точки в датасете при наведении мыши.
+    """
+    # 1. Чтение данных
+    raw_data = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
+    # if not raw_data:
+    #     print("Датасет пуст.")
+    #     return None, None
+        
+    dataset_orig = np.array(raw_data, dtype=object)
+    
+    # Создаем массив исходных индексов (номера строк изначального датасета)
+    original_indices = np.arange(len(dataset_orig))
+    
+    # Фильтрация битых строк
+    mask = np.array([isinstance(val, str) for val in dataset_orig[:, 6]])
+    dataset_orig = dataset_orig[mask]
+    original_indices = original_indices[mask]
+    
+    # Фильтрация по целевому параметру
+    poses_mask = dataset_orig[:, 6] == target_param
+    target_poses = dataset_orig[poses_mask]
+    final_original_indices = original_indices[poses_mask]
+    
+    if len(target_poses) == 0:
+        print(f"Нет точек для параметра {target_param}.")
+        return None, None
+
+    print(f"Найдено {len(target_poses)} точек для {target_param}. Выполняю кластеризацию...")
+
+    # Извлекаем только 6 углов суставов
+    angles = target_poses[:, 0:6].astype(float)
+    
+    # 2. Нормализация (чтобы все суставы имели одинаковый вес для K-Means)
+    scaler = StandardScaler()
+    angles_scaled = scaler.fit_transform(angles)
+    
+    # 3. Кластеризация K-Means
+    kmeans = KMeans(n_clusters=min(n_clusters, len(angles)), random_state=42, n_init=10)
+    labels = kmeans.fit_predict(angles_scaled)
+    
+    # 4. Сжатие 6D пространства в 2D для визуализации (PCA)
+    pca = PCA(n_components=2)
+    angles_2d = pca.fit_transform(angles_scaled)
+    
+    # --- ВИЗУАЛИЗАЦИЯ ---
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+    
+    # График 1: Карта точек
+    scatter = ax1.scatter(angles_2d[:, 0], angles_2d[:, 1], c=labels, cmap='tab10', s=60, alpha=0.8, edgecolors='k')
+    ax1.set_title(f'PCA: Проекция множества точек ({target_param})', fontsize=12)
+    ax1.set_xlabel('Главная компонента 1')
+    ax1.set_ylabel('Главная компонента 2')
+    ax1.grid(True, linestyle='--', alpha=0.6)
+    
+    # Легенда
+    legend1 = ax1.legend(*scatter.legend_elements(), title="Кластеры")
+    ax1.add_artist(legend1)
+
+    # ИНТЕРАКТИВНОСТЬ: Всплывающие подсказки
+    try:
+        import mplcursors
+        # hover=True означает появление при наведении
+        cursor = mplcursors.cursor(scatter, hover=True)
+        
+        @cursor.connect("add")
+        def on_add(sel):
+            idx = sel.index
+            orig_idx = final_original_indices[idx]
+            cluster_id = labels[idx]
+            # Форматируем текст подсказки
+            sel.annotation.set_text(f"Строка в CSV: {orig_idx + 2}\nКластер: {cluster_id}")
+            sel.annotation.get_bbox_patch().set(fc="white", alpha=0.9)
+    except ImportError:
+        print("⚠️ Установите библиотеку 'mplcursors' (pip install mplcursors) для работы всплывающих подсказок.")
+
+    # График 2: Профили кластеров
+    centers_real = scaler.inverse_transform(kmeans.cluster_centers_)
+    
+    for i, center in enumerate(centers_real):
+        ax2.plot(range(1, 7), center, marker='o', linewidth=2, label=f'Кластер {i}')
+        
+    ax2.set_title('Усредненные позы для каждого кластера', fontsize=12)
+    ax2.set_xlabel('Номер сустава (1-6)')
+    ax2.set_ylabel('Угол (в радианах или градусах, как в датасете)')
+    ax2.set_xticks(range(1, 7))
+    ax2.grid(True, linestyle='--', alpha=0.6)
+    ax2.legend()
+
+    plt.tight_layout()
+    plt.show()
+    
+    return target_poses, labels
+
 def _worker_task(args):
     """Изолированная задача для одного процесса."""
     combo, model, calibration_data, validation_data = args
@@ -585,6 +696,8 @@ def main(args):
             
     elif args.mode == "rate":
         rate_poses_contributions(model, args.target_param, args.num_of_tries, args.floor)
+    elif args.mode == "cluster":
+        cluster_and_visualize_poses(model, args.target_param, n_clusters=args.num_of_tries)
   
     
     elif args.mode == "test":
