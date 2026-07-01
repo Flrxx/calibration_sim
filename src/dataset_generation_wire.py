@@ -15,6 +15,71 @@ import copy
 from math_routines import DEG
 import warnings
 
+def calculate_derivatives(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray], eps=1e-5):
+    """
+    Вычисляет первую и вторую производные длины троса по каждому параметру.
+    """
+    first_deriv = np.zeros(len(model.error_list))
+    second_deriv = np.zeros(len(model.error_list))
+    
+    # Центральная точка
+    zero_pos = model.get_transition_matrix(angles, "nominal")[0:3, 3]
+    L_center = np.linalg.norm(zero_pos - model.zero_offset_nominal)
+    
+    for i, p_name in enumerate(model.error_list):
+        # Шаг вперед (+eps)
+        model.vary_nominal_dh(p_name, eps)
+        pos_plus = model.get_transition_matrix(angles, "nominal")[0:3, 3]
+        L_plus = np.linalg.norm(pos_plus - model.zero_offset_nominal)
+        model.vary_nominal_dh(p_name, -eps) # Возврат
+        
+        # Шаг назад (-eps)
+        model.vary_nominal_dh(p_name, -eps)
+        pos_minus = model.get_transition_matrix(angles, "nominal")[0:3, 3]
+        L_minus = np.linalg.norm(pos_minus - model.zero_offset_nominal)
+        model.vary_nominal_dh(p_name, eps) # Возврат
+        
+        # Первая производная (Градиент) - метод центральных разностей
+        first_deriv[i] = (L_plus - L_minus) / (2 * eps)
+        
+        # Вторая производная (Кривизна / Гессиан)
+        second_deriv[i] = (L_plus - 2 * L_center + L_minus) / (eps**2)
+        
+    return first_deriv, second_deriv
+
+def evaluate_snr_curvature_penalty(model, angles, numerical_target_index, nonlinearity_penalty=0.5, drift_weight=0.5):
+    """
+    Оценка SNR с учетом штрафа за нелинейность (стабильность градиента) 
+    и штрафа за "дрейф" (удаление от базовой комфортной позы).
+    
+    :param drift_weight: Чем выше значение (например, 1.0 или 2.0), тем сильнее
+                         оптимизатор будет "привязан" к начальным координатам.
+    """
+    first_deriv, second_deriv = calculate_derivatives(model, angles)
+    
+    # 1. Полезный сигнал (Первая производная)
+    target_signal = abs(first_deriv[numerical_target_index])
+    
+    # 2. Нестабильность целевого параметра (Вторая производная)
+    target_curvature = abs(second_deriv[numerical_target_index])
+    
+    # 3. Кинематический шум
+    noise_uncalib = np.sum(first_deriv[numerical_target_index + 1:]**2)
+    noise_calib = np.sum((first_deriv[0:numerical_target_index]**2) / 50.0)
+    total_noise = np.sqrt(noise_uncalib) + 0.01 + np.sqrt(noise_calib)
+    
+    # 4. Штраф за дрейф (L2-регуляризация)
+    # Вычисляем расстояние от текущей позы до базовой в радианах.
+    # Это "стягивает" все точки обратно к начальному положению (например, к 14 град для q1).
+    angles_arr = np.array(angles)
+    zero_arr = np.array(model.zero_wire_angles)
+    drift_distance = np.linalg.norm(angles_arr - zero_arr)
+    
+    # НОВЫЙ SNR: Штрафуем за кривизну И за сильное удаление от нулевой позы
+    robust_snr = target_signal / (total_noise + nonlinearity_penalty * target_curvature + drift_weight * drift_distance)
+    
+    return robust_snr
+
 def calculate_jac_DH_params(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray], eps = 1e-6):
     jac_DH = np.zeros((3, len(model.error_list)))
     initial_coords = model.get_transition_matrix(angles, "nominal")[0:3, 3]
@@ -66,7 +131,8 @@ def calculate_optimal_position(model: hayati_model.HayatiModel, numerical_target
         if model.violates_dynamic_limits(angles):
             return 1e6  # Return a large penalty value if the pose violates dynamic limits
         
-        return -(abs(output[numerical_target_index]) /( sqrt(np.sum(output[numerical_target_index + 1:]**2)) + 0.01  + sqrt(np.sum(output[0:numerical_target_index]**2/50))    ) )
+        return -evaluate_snr_curvature_penalty(model, angles, numerical_target_index)
+        #return -(abs(output[numerical_target_index]) /( sqrt(np.sum(output[numerical_target_index + 1:]**2)) + 0.01  + sqrt(np.sum(output[0:numerical_target_index]**2/50))    ) )
 
     cons = []
 
