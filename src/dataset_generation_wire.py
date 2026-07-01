@@ -131,8 +131,8 @@ def calculate_optimal_position(model: hayati_model.HayatiModel, numerical_target
         if model.violates_dynamic_limits(angles):
             return 1e6  # Return a large penalty value if the pose violates dynamic limits
         
-        return -evaluate_snr_curvature_penalty(model, angles, numerical_target_index)
-        #return -(abs(output[numerical_target_index]) /( sqrt(np.sum(output[numerical_target_index + 1:]**2)) + 0.01  + sqrt(np.sum(output[0:numerical_target_index]**2/50))    ) )
+        #return -evaluate_snr_curvature_penalty(model, angles, numerical_target_index)
+        return -(abs(output[numerical_target_index]) /( sqrt(np.sum(output[numerical_target_index + 1:]**2)) + 0.01  + sqrt(np.sum(output[0:numerical_target_index]**2/50))    ) )
 
     cons = []
 
@@ -416,27 +416,6 @@ def vary_joints(model: hayati_model.HayatiModel, start_joint: Union[list, np.nda
             contribution = calculate_contribution(model, angles)
             add_line_csv(np.concatenate((angles / DEG, [0], contribution.flatten())).tolist(), "datasets/ARM95/wire/test.csv", model.fieldnames_options['wire_contributions'], ".3f")
 
-def is_pose_valid(model, angles):
-    matrix = model.get_transition_matrix(angles, "nominal")
-    z_dir = matrix[0:3, 2]
-    wire = matrix[0:3, 3] - model.zero_offset_nominal
-    wire_len = np.linalg.norm(wire) 
-    
-    if wire_len < model.wire_limits[0] or wire_len > model.wire_limits[1]: return False
-
-    wire_norm = wire / wire_len
-    scalar_wire_forward = np.vdot(wire_norm, model.zero_wire_direction)
-    if scalar_wire_forward <= 0: return False
-        
-    alpha = acos(np.clip(scalar_wire_forward, -1.0, 1.0))
-    if alpha > model.angle_limit_wire: return False
-
-    scalar_z = np.vdot(-wire_norm, z_dir)
-    alpha_z = acos(np.clip(scalar_z, -1.0, 1.0))
-    if alpha_z > model.angle_limit_z: return False
-        
-    return True
-
 def generate_initial_poses(model: hayati_model.HayatiModel, target_param, start_idx, num_candidates):
     valid_poses = []
     signals = []
@@ -460,7 +439,7 @@ def generate_initial_poses(model: hayati_model.HayatiModel, target_param, start_
                 
             q_rand[j] = np.random.uniform(low=dyn_low, high=dyn_high)
 
-        if is_pose_valid(model, q_rand):
+        if model.is_pose_valid(q_rand):
             contrib = calculate_contribution(model, q_rand)
             signal = abs(contrib[target_idx])
             

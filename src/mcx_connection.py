@@ -115,17 +115,18 @@ class MCX:
             value = -1
         return value
 
-    def execute_moveL(self, point: np.ndarray, velocity=0.03): #0.02
+    def execute_moveL(self, point: np.ndarray, velocity=0.1): #0.03
         self.motion_program.addMoveL([Waypoint(point)], velocity=velocity)
         self.execute_move()
     
-    def execute_moveJ(self, pose: np.ndarray, rotational_velocity=0.15): #0.1
+    def execute_moveJ(self, pose: np.ndarray, rotational_velocity=0.5): #0.1
         self.motion_program.addMoveJ([Waypoint(pose)], rotational_velocity=rotational_velocity)
         self.execute_move()
 
     def find_next_positive_index(self, dataset_poses, start_num):
         for i in range(len(dataset_poses)):
-            if dataset_poses[start_num + i, 6] >= 0:
+            #if dataset_poses[start_num + i, 6] >= 0:
+            if isinstance(dataset_poses[start_num + i, 6], str):
                 return dataset_poses[start_num + i, 6]
         return -1
 
@@ -149,9 +150,7 @@ class MCX:
     def move_through_cal_dataset(self, dataset_poses: np.ndarray, zero_pose: np.ndarray, model):        
         zero_point = self.robot_PoseTransformer.calcJointToCartPose(zero_pose).jointtocartlist[0].cartpose.coordinates
 
-        result = np.zeros(shape=(len(dataset_poses), 8))
-        result[:, 6] = dataset_poses[:, 6]
-        #dataset_poses = dataset_poses[:, :6]
+        result = np.array(dataset_poses[:, :8], dtype=object)
         
         self.execute_moveJ(zero_pose)
         self.null_value = self.get_wire_distance(0)
@@ -159,10 +158,10 @@ class MCX:
         last_index_extra_points = -1
         last_index = dataset_poses[0, 6]
         for i, pose in enumerate(dataset_poses): 
-            if (last_index != pose[6] or last_index != self.find_next_positive_index(dataset_poses, i)) and dataset_poses[i-1, 6] >= 0 and pose[6] != -3:
+            if (last_index != pose[6] or last_index != self.find_next_positive_index(dataset_poses, i)) and isinstance(dataset_poses[i-1, 6], str) and pose[6] != -3:
                 self.move_to_start(previous_poses, zero_point)
 
-            if pose[6] < 0:
+            if isinstance(pose[6], int):
                 print(f"Extra pose {i + 2 + self.start_num}")
                 if pose[6] == -1 or pose[6] == -3:
                     start_pose = self.joint_subscription.read()[0].value
@@ -183,7 +182,7 @@ class MCX:
                 result[i, 7] = -1
                 result[i, 0:6] = self.joint_subscription.read()[0].value
 
-            elif dataset_poses[i - 1, 6] < 0 or pose[6] == last_index_extra_points:
+            elif isinstance(dataset_poses[i - 1, 6], int) or pose[6] == last_index_extra_points:
                 last_index_extra_points = pose[6]
                 start_pose = self.joint_subscription.read()[0].value
                 previous_poses.append([*start_pose, -1]) 
@@ -239,7 +238,7 @@ class MCX:
         return result
     
     def write_calibration_dataset(self, model: hayati_model.HayatiModel):              
-        contribution_dataset = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])[:, 0:7]
+        contribution_dataset = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])[:, 0:8]
         contribution_dataset[:, 0:6] *= DEG
         contribution_dataset = contribution_dataset[self.start_num:, :]
         calibration_dataset = self.move_through_cal_dataset(contribution_dataset, model.zero_wire_angles.copy(), model)

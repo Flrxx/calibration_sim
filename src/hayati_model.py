@@ -8,6 +8,7 @@ import multiprocessing as mp
 import copy
 from math_routines import DEG
 from scipy.optimize import minimize
+import random
 
 np.set_printoptions(
     suppress=True, 
@@ -242,6 +243,10 @@ class HayatiModel:
         res[mask] *= 1000   
         return res 
     
+
+# Убедись, что DEG импортирован в файле твоего класса
+# from math_routines import DEG 
+
     def violates_dynamic_limits(self, q):
         """Проверяет готовую позу на нарушение правил коллизий"""
         for rule in self.dynamic_constrains_deg:
@@ -251,21 +256,34 @@ class HayatiModel:
             cond_min = rule["if_range_deg"][0] * DEG
             cond_max = rule["if_range_deg"][1] * DEG
 
+            # Если сустав попал в триггерную зону (условие сработало)
             if cond_min <= q[cond_j] <= cond_max:
-                target_min = rule["then_range_deg"][0] * DEG
-                target_max = rule["then_range_deg"][1] * DEG
-
-                if not (target_min <= q[target_j] <= target_max):
-                    return True # Правило нарушено, поза недостижима
+                is_valid_for_this_rule = False
+                
+                # Проверяем все разрешенные подзоны
+                then_rules = rule["then_range_deg"]
+                for sub_rule in then_rules: # Изменено имя переменной, чтобы не перезаписывать rule
+                    target_min = sub_rule[0] * DEG
+                    target_max = sub_rule[1] * DEG
+                    
+                    if target_min <= q[target_j] <= target_max:
+                        is_valid_for_this_rule = True
+                        break  # Поза в безопасной подзоне, дальше подзоны можно не проверять
+                
+                # Если ни одна из подзон не подошла - правило нарушено
+                if not is_valid_for_this_rule:
+                    return True 
+                    
+        # Если все сработавшие правила выполнены (или ни одно не сработало)
         return False
-
 
     def get_dynamic_limits(self, q_current, target_joint_idx, base_low_rad, base_high_rad):
         """
-        Проверяет правила и возвращает суженные лимиты для целевого сустава 
-        на основе текущего состояния других суставов.
+        Проверяет правила и возвращает суженные лимиты (low, high) для целевого сустава.
+        Поддерживает "разорванные" разрешенные зоны и их пересечения.
         """
-        low, high = base_low_rad, base_high_rad
+        # Изначально разрешен весь базовый диапазон
+        valid_ranges = [(base_low_rad, base_high_rad)]
         
         for rule in self.dynamic_constrains_deg:
             if rule["then_joint"] - 1 == target_joint_idx:
@@ -273,16 +291,46 @@ class HayatiModel:
                 cond_min = rule["if_range_deg"][0] * DEG
                 cond_max = rule["if_range_deg"][1] * DEG
 
-                # Проверяем, попадает ли управляющий сустав в триггерную зону
+                # Если сустав-условие попал в триггерную зону
                 if cond_min <= q_current[cond_j] <= cond_max:
-                    rule_min = rule["then_range_deg"][0] * DEG
-                    rule_max = rule["then_range_deg"][1] * DEG
                     
-                    # Сужаем границы (берем пересечение базовых и условных лимитов)
-                    low = max(low, rule_min)
-                    high = min(high, rule_max)
+                    # Собираем все разрешенные куски из сработавшего правила
+                    allowed_sub_ranges = []
+                    for sub_rule in rule["then_range_deg"]:
+                        allowed_sub_ranges.append((sub_rule[0] * DEG, sub_rule[1] * DEG))
                     
-        return low, high
+                    # Находим ПЕРЕСЕЧЕНИЕ текущих разрешенных зон с новыми из правила
+                    new_valid_ranges = []
+                    for vr_low, vr_high in valid_ranges:
+                        for ar_low, ar_high in allowed_sub_ranges:
+                            # Пересечение двух отрезков
+                            i_low = max(vr_low, ar_low)
+                            i_high = min(vr_high, ar_high)
+                            
+                            if i_low <= i_high: # Если отрезки реально пересекаются
+                                new_valid_ranges.append((i_low, i_high))
+                    
+                    valid_ranges = new_valid_ranges
+                    
+        # Если разрешенных зон не осталось (правила несовместимы)
+        if not valid_ranges:
+            # Возвращаем инвертированные лимиты. Это приведет к ошибке при генерации, 
+            # и Монте-Карло сам отбросит эту бесперспективную попытку.
+            return base_high_rad, base_low_rad 
+            
+        # Если зон несколько, нам нужно вернуть ОДНУ для функции random.uniform.
+        # Выбираем случайную зону, пропорционально её ширине. Это гарантирует 
+        # математически равномерное распределение точек в Монте-Карло.
+        widths = [high - low for low, high in valid_ranges]
+        total_width = sum(widths)
+        
+        if total_width <= 0:
+            return valid_ranges[0][0], valid_ranges[0][1]
+            
+        probabilities = [w / total_width for w in widths]
+        chosen_range = random.choices(valid_ranges, weights=probabilities, k=1)[0]
+        
+        return chosen_range[0], chosen_range[1]
     
     def is_pose_valid(self, angles):
         # НОВОЕ: Сначала проверяем динамические лимиты (это быстро)
