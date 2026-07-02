@@ -266,7 +266,7 @@ class MCX:
             vertical_offset_point[2] += distance_theor
             print(f"Theoretical distance: {(distance_theor * 1000):.2f} mm")
         
-            self.execute_moveL(vertical_offset_point)
+            #self.execute_moveL(vertical_offset_point)
             #time.sleep(1)
             vertical_offset_pose = self.joint_subscription.read()[0].value
             
@@ -290,7 +290,10 @@ class MCX:
         return result
 
     def write_validation_dataset(self, model: hayati_model.HayatiModel):              
-        validation_dataset = read_dataset("datasets/ARM95/wire/validation_dataset.csv", model.fieldnames_options["test_result"])
+        validation_dataset = read_dataset("datasets/ARM95/wire/validation_dataset.csv", [
+        "q1", "q2", "q3", "q4", "q5", "q6", 
+        "d_nom", "d_real", "d_est", "diff"
+        ])  
         validation_dataset[:, :6] *= DEG
         validation_dataset[:, 6:] /= 1000
         validation_dataset = validation_dataset[self.start_num:, :]

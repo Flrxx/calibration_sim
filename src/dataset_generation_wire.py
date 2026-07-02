@@ -15,6 +15,8 @@ import copy
 from math_routines import DEG
 import warnings
 
+from test_3 import is_pose_valid
+
 def calculate_derivatives(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray], eps=1e-5):
     """
     Вычисляет первую и вторую производные длины троса по каждому параметру.
@@ -129,7 +131,7 @@ def calculate_optimal_position(model: hayati_model.HayatiModel, numerical_target
         output = calculate_contribution(model, angles)
 
         if model.violates_dynamic_limits(angles):
-            return 1e6  # Return a large penalty value if the pose violates dynamic limits
+            return 1e6
         
         #return -evaluate_snr_curvature_penalty(model, angles, numerical_target_index)
         return -(abs(output[numerical_target_index]) /( sqrt(np.sum(output[numerical_target_index + 1:]**2)) + 0.01  + sqrt(np.sum(output[0:numerical_target_index]**2/50))    ) )
@@ -360,23 +362,44 @@ def generate_samples(model: hayati_model.HayatiModel, i_target: int, start_joint
     write_dataset(printable_res, model.generation_output, model.fieldnames_options["wire_contributions"], tolerance = 3)
     print(f"Left {len(printable_res)} poses")
 
-def measure_real_distance(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray]):
+def measure_real_distance(model, angles: Union[list, np.ndarray]):
     [x, y, z] = model.get_transition_matrix(angles, "real")[0:3, 3]
     distance = sqrt((x - model.zero_offset_real[0])**2 + (y - model.zero_offset_real[1])**2 + (z - model.zero_offset_real[2])**2)
-    distance *= 1 + uniform(-1, 1) * model.encoder_abs_tolerance                            # fit tolerance
+    
+    # 1. Защита для одиночных вызовов: 
+    # Если функция вызвана напрямую (вне measure_all_distances), генерируем масштабную ошибку
+    if not hasattr(model, 'encoder_linear_scale'):
+        model.encoder_linear_scale = uniform(-1, 1) * model.encoder_abs_tolerance
+        
+    # 2. Применяем зафиксированную систематическую (линейную) ошибку
+    distance *= 1 + model.encoder_linear_scale 
+    
+    # 3. Применяем разрешение энкодера (ступенчатость)
     if model.encoder_resolution != 0:
-        distance = round(distance / model.encoder_resolution) * model.encoder_resolution    # fit resolution
+        distance = round(distance / model.encoder_resolution) * model.encoder_resolution    
+        
     return distance
 
-def measure_all_distances(model: hayati_model.HayatiModel, dataset=[]):
+def measure_all_distances(model, dataset=[]):
+    # 1. Принудительно генерируем НОВУЮ систематическую ошибку для этой "виртуальной сессии"
+    model.encoder_linear_scale = uniform(-1, 1) * model.encoder_abs_tolerance
+
     if len(dataset) == 0:
         dataset = read_dataset(model.contribution_dataset, model.fieldnames_options['wire_contributions'])[:, 0:8]
         dataset[:, 0:6] *= DEG
-    #mask = dataset[:, 6].astype(int) >= 0
+        
     mask = np.array([isinstance(val, str) for val in dataset[:, 6]])
     dataset = dataset[mask]
+    
+    # 2. Измеряем все точки (measure_real_distance использует уже сгенерированный encoder_linear_scale)
     for sample in dataset:
         sample[7] = measure_real_distance(model, sample[0:6])
+        
+    # 3. Сбрасываем ошибку после обработки всего датасета.
+    # Следующий вызов этой функции (например, в цикле ГА) создаст совершенно новую погрешность.
+    if hasattr(model, 'encoder_linear_scale'):
+        delattr(model, 'encoder_linear_scale')
+        
     return dataset
 
 def make_calibration_dataset(model: hayati_model.HayatiModel):
@@ -493,38 +516,83 @@ def correct_poses(model: hayati_model.HayatiModel):
     write_dataset(new_samples, model.contribution_dataset, model.fieldnames_options["wire_contributions"], tolerance=3) 
     print("Done")
 
-def get_dataset_for_validation(model: hayati_model.HayatiModel, tries_num: int, angle_limit, wire_limits, angle_diff):
-    with open(model.results_file, 'r') as config_file:
-        config = json.load(config_file)
-    model.estimated_dh = copy.deepcopy(config["estimated_dh"])
-    i = 0
-    printable_res = np.zeros(shape=(tries_num, len(model.fieldnames_options["test_result"])))
-    bounds = copy.deepcopy(model.bounds)
-    bounds[0, :] = np.array([-45 * DEG, 45 * DEG])
-    bounds[1, :] = np.array([-40 * DEG, 40 * DEG])
-    bounds[4, :] = np.array([60 * DEG, 120 * DEG])
+def generate_validation_dataset(model: hayati_model.HayatiModel, num_points: int = 50):
+    """
+    Генерирует случайные валидные позы методом Монте-Карло.
+    """
+    print(f"Запуск Монте-Карло: поиск {num_points} валидационных точек...")
+    valid_poses = []
+    attempts = 0
+    
+    low_lim = model.joint_limits_general_l
+    high_lim = model.joint_limits_general_h
+    
+    while len(valid_poses) < num_points and attempts < 1000000:
+        attempts += 1
+        q_rand = np.zeros(6)
+        
+        # Полностью случайная генерация по всем суставам
+        for j in range(6):
+            q_rand[j] = np.random.uniform(low=low_lim[j], high=high_lim[j])
+            
+        if model.is_pose_valid(q_rand) and not model.violates_dynamic_limits(q_rand):
+            valid_poses.append(q_rand)
+            
+        if attempts % 50000 == 0:
+            print(f"  Прошло {attempts} попыток, найдено точек: {len(valid_poses)}")
+            
+    print(f"Готово! Найдено {len(valid_poses)} точек за {attempts} попыток.")
+    return valid_poses
 
-    while i < tries_num:
-        random_angles = np.array([model.joint_limits_general_l[axis] + random() * (model.joint_limits_general_h[axis] - model.joint_limits_general_l[axis]) for axis in range(6)], dtype='float')
-        angles = model.satisfies_wire_limits(random_angles, bounds, angle_limit, wire_limits)
-        if angles[0] == None:
-            continue
+def export_validation_csv(model: hayati_model.HayatiModel, poses: list, output_filepath: str):
+    """
+    Рассчитывает номинальную длину, формирует шаблон и записывает в CSV.
+    """
+    # Заголовки таблицы
+    headers = [
+        "q1", "q2", "q3", "q4", "q5", "q6", 
+        "d_nom", "d_real", "d_est", "diff"
+    ]
+    
+    rows = []
+    sum_d_nom = 0.0
+    
+    for angles in poses:
+        # Считаем номинальную дистанцию
+        matrix = model.get_transition_matrix(angles, "nominal")
+        wire = matrix[0:3, 3] - model.zero_offset_nominal
+        
+        d_nom_mm = np.linalg.norm(wire) * 1000.0 
+        
+        sum_d_nom += d_nom_mm
+        
+        # Углы переводим в градусы для удобства
+        q_deg = angles / DEG
+        
+        # Формируем строку: углы, номинальная длина, и -1 для пустых колонок
+        row = [f"{q:.3f}" for q in q_deg] + [f"{d_nom_mm:.3f}", "-1", "-1", "-1"]
+        rows.append(row)
+        
+    # Рассчитываем среднее только для номинальной длины
+    avg_d_nom = sum_d_nom / len(poses) if poses else 0.0
+    
+    # Динамический номер последней строки для формул Excel
+    end_row = len(poses) + 1
+    
+    # Строка средних значений в конце (-1 вместо пустых ячеек для углов)
+    avg_row = [
+        "-1", "-1", "-1", "-1", "-1", "-1", 
+        f"{avg_d_nom:.3f}", 
+        f"-1", 
+        f"-1", 
+        f"-1"
+    ]
+    rows.append(avg_row)
+    
+    write_dataset(rows, output_filepath, headers, tolerance=3)
+        
+    print(f"Валидационный датасет успешно сохранен в: {output_filepath}")
 
-        similar_index = get_similar_index(printable_res[:, :6], angles, angle_diff * DEG)
-        if similar_index is not None:
-            continue
-
-        random_point = model.get_transition_matrix(angles, "nominal")
-        if model.satisfies_cartesian_limits(random_point):
-            distance_theoretical = np.linalg.norm(calculate_distance(model, angles, "nominal"))
-            distance_estimated = np.linalg.norm(calculate_distance(model, angles, "estimated"))
-            printable_res[i] = np.concatenate([angles, [distance_theoretical, distance_estimated, -1, -1]])
-            i += 1
-    printable_res[:, :6] /= DEG
-    printable_res[:, 6:] *= 1000
-    write_dataset(printable_res, "datasets/ARM95/validation_dataset.csv", model.fieldnames_options["test_result"], tolerance=3)
-
-#def auto_collect_layer
 
 def main(args):
     with open(args.config, 'r') as config_file:
@@ -544,7 +612,9 @@ def main(args):
     elif args.mode == 'correct':
         correct_poses(model)
     elif args.mode == 'validation':
-        get_dataset_for_validation(model, args.tries_count, 15 * DEG, [100 / 1000, 600 / 1000], 15*DEG)
+        validation_poses = generate_validation_dataset(model, num_points=args.tries_count)
+        export_validation_csv(model, validation_poses, "datasets/ARM95/wire/validation_dataset.csv")
+        #get_dataset_for_validation(model, args.tries_count, 15 * DEG, [100 / 1000, 600 / 1000], 15*DEG)
     else:
         print("Wrong mode")
 

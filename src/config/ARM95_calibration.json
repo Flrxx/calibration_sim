@@ -78,8 +78,8 @@
                   
   "wire_limits_l_mm": 30,
   "wire_limits_h_mm": 10000,
-  "angle_limit_wire_deg": 75,
-  "angle_limit_z_deg": 75,
+  "angle_limit_wire_deg": 45,
+  "angle_limit_z_deg": 45,
 
   "dynamic_constraints_deg": [
       {
@@ -135,6 +135,6 @@
   "theta_delta_deg": 0.3,
   "beta_delta_deg": 0.3,
 
-  "ignore_errors_list": ["d_1", "theta_1"],
+  "ignore_errors_list": [],
   "test_samples_number": 100
 }

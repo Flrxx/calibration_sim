@@ -238,7 +238,6 @@ def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate, is_
     local_estimated_error /= tries_count
     local_estimated_error_prev /= tries_count
 
-
     if tries_count == 1:
         write_validation_dataset(copy_model, is_real)
 
