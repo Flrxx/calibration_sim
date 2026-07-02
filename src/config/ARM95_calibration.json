@@ -117,18 +117,24 @@
           "if_range_deg": [-90, -70],
           "then_joint": 3,
           "then_forbidden_range_deg": [[-180, -160], [130, 180]]
+      },
+      {
+          "if_joint": 2,                
+          "if_range_deg": [35, 45],
+          "then_joint": 3,
+          "then_forbidden_range_deg": [[-160, -140], [0, 160]]
       }
   ],
 
   "distance_delta_mm": 1.0,
   "angle_delta_deg": 1.0,
   
-  "a_delta_mm": 2,
-  "alpha_delta_deg": 0.5,
-  "d_delta_mm": 2,
-  "theta_delta_deg": 0.5,
-  "beta_delta_deg": 0.5,
+  "a_delta_mm": 1,
+  "alpha_delta_deg": 0.3,
+  "d_delta_mm": 1,
+  "theta_delta_deg": 0.3,
+  "beta_delta_deg": 0.3,
 
-  "ignore_errors_list": [],
+  "ignore_errors_list": ["d_1", "theta_1"],
   "test_samples_number": 100
 }
