@@ -245,7 +245,7 @@ def generate_single_layer(model: hayati_model.HayatiModel, i_target, start_joint
     #     for j in range(start_joint, 6):
     #         q_rand[j] = np.random.uniform(low=model.joint_limits_general_l[j], high=model.joint_limits_general_h[j])
             
-    #     if is_pose_valid(model, q_rand):
+    #     if model.is_pose_valid(q_rand):
     #         initial_angles[i] = q_rand
     #         i += 1
 
@@ -422,7 +422,7 @@ def generate_initial_poses(model: hayati_model.HayatiModel, target_param, start_
     attempts = 0
     target_idx = model.error_list.index(target_param)
     
-    while len(valid_poses) < num_candidates * 2 and attempts < 10000:
+    while len(valid_poses) < num_candidates * 2 and attempts < 30000:
         attempts += 1
         q_rand = np.copy(model.zero_wire_angles)
         

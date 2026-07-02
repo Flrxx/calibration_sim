@@ -153,14 +153,6 @@ def generate_samples_monte_carlo(model, target_param, already_calibrated_params,
     print(f"Left {len(printable_res)} poses for {target_param}")
     return printable_res
 
-# --- ОРИГИНАЛЬНАЯ ФУНКЦИЯ ДЛЯ ВЫЗОВА В calculate_expected_influence_mm ---
-def calculate_contribution(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray]):
-    jac_DH = calculate_jac_DH_params(model, angles)
-    wire_direction = calculate_wire_direction(model, angles)
-    contribution = np.dot(wire_direction.T, jac_DH - model.jac_DH_0)
-    contribution[0, model.angle_idexes] *= DEG * 1000 # mm/deg
-    return contribution.flatten()
-
 # def calculate_contribution(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray]):
 #     jac_DH = calculate_jac_DH_params(model, angles)
 #     wire_direction = calculate_wire_direction(model, angles)

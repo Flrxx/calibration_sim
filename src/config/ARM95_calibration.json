@@ -2,7 +2,7 @@
   "joint_limits_general_h": [
     2.26,
     0.78,
-    2.79,
+    2.7,
     3.14,
     3.14,
     3.14
@@ -10,7 +10,7 @@
   "joint_limits_general_l": [
     -2.26,
     -1.57,
-    -2.79,
+    -2.7,
     -3.14,
     -3.14,
     -3.14
@@ -70,7 +70,7 @@
     "alpha_6", 
     "a_6", "theta_6", "d_6", "theta_5", "a_5", "alpha_5",  
     "d_5", "alpha_4", "a_4", "theta_4",
-    "a_3", "alpha_3", "theta_3", "d_4",
+    "alpha_3", "a_3", "theta_3", "d_4",
     "beta_3", "alpha_2", "a_2", "theta_2",
     "beta_2", "alpha_1", "a_1",
     
@@ -94,12 +94,31 @@
         "then_joint": 5,
         "then_range_deg": [[-110, -70], [70, 110]]
     },
+    {
+        "if_joint": 4,                
+        "if_range_deg": [-130, -181],
+        "then_joint": 5,
+        "then_range_deg": [[-110, -70], [70, 110]]
+    },
        {
         "if_joint": 3,                
         "if_range_deg": [130, 180],
         "then_joint": 4,
         "then_range_deg": [[-160, 160]]
+    },
+       {
+        "if_joint": 2,                
+        "if_range_deg": [0, 35],
+        "then_joint": 3,
+        "then_range_deg": [[-40, 160]]
+    },
+       {
+        "if_joint": 2,                
+        "if_range_deg": [-90, -70],
+        "then_joint": 3,
+        "then_range_deg": [[-160, 130]]
     }
+    
   ], 
 
   "distance_delta_mm": 1.0,

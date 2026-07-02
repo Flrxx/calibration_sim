@@ -6,10 +6,11 @@ import json
 import hayati_model
 from csv_routines import read_dataset, write_dataset
 from math_routines import DEG
+from math import sqrt
 
 # Импортируем функции расчета из актуального модуля
 try:
-    from new_dataset_generation import (
+    from dataset_generation_wire import (
         calculate_contribution, 
         calculate_jac_DH_params
     )
@@ -120,16 +121,17 @@ def update_dataset_contributions(model: hayati_model.HayatiModel, input_filepath
         
         target_param = row[6]
         
+        new_contrib = calculate_contribution(model, angles_rad)
         # Перерасчет SNR с использованием новой функции штрафа за кривизну
         if target_param in model.error_list:
             numerical_target_index = model.error_list.index(target_param)
-            new_snr = evaluate_snr_curvature_penalty(model, angles_rad, numerical_target_index)
+            new_snr = -(abs(new_contrib[numerical_target_index]) /( sqrt(np.sum(new_contrib[numerical_target_index + 1:]**2)) + 0.01  + sqrt(np.sum(new_contrib[0:numerical_target_index]**2/50))    ) )
         else:
             print(f"Внимание: Параметр {target_param} не найден в error_list. Установлен SNR = 0.")
             new_snr = 0.0
             
         # Генерируем новый вектор влияния
-        new_contrib = calculate_contribution(model, angles_rad)
+        
         
         # Собираем новую строку
         new_row = angles_deg.tolist() + [target_param, float(new_snr)] + new_contrib.flatten().tolist()
@@ -151,7 +153,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="src/config/ARM95_calibration.json", help="Путь к конфигу модели")
     parser.add_argument("--input", default="datasets/ARM95/wire/contribution/contribution_dataset.csv", help="Входной датасет")
-    parser.add_argument("--output", default="datasets/ARM95/wire/contribution/contribution_dataset_new.csv", help="Выходной датасет")
+    parser.add_argument("--output", default="datasets/ARM95/wire/contribution/contribution_dataset.csv", help="Выходной датасет")
     args = parser.parse_args()
 
     with open(args.config, 'r') as config_file:

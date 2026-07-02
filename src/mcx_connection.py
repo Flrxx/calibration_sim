@@ -160,8 +160,7 @@ class MCX:
         for i, pose in enumerate(dataset_poses): 
             if (last_index != pose[6] or last_index != self.find_next_positive_index(dataset_poses, i)) and isinstance(dataset_poses[i-1, 6], str) and pose[6] != -3:
                 self.move_to_start(previous_poses, zero_point)
-
-            if isinstance(pose[6], int):
+            if isinstance(pose[6], float):
                 print(f"Extra pose {i + 2 + self.start_num}")
                 if pose[6] == -1 or pose[6] == -3:
                     start_pose = self.joint_subscription.read()[0].value
@@ -182,7 +181,7 @@ class MCX:
                 result[i, 7] = -1
                 result[i, 0:6] = self.joint_subscription.read()[0].value
 
-            elif isinstance(dataset_poses[i - 1, 6], int) or pose[6] == last_index_extra_points:
+            elif isinstance(dataset_poses[i - 1, 6], float) or pose[6] == last_index_extra_points:
                 last_index_extra_points = pose[6]
                 start_pose = self.joint_subscription.read()[0].value
                 previous_poses.append([*start_pose, -1]) 
@@ -195,8 +194,8 @@ class MCX:
                 tcp_coords_nom = self.robot_PoseTransformer.calcJointToCartPose(pose[:6]).jointtocartlist[0].cartpose.coordinates[0:3]
                 distance_theor = sqrt((tcp_coords_nom[0] - zero_point[0])**2 + (tcp_coords_nom[1] - zero_point[1])**2 + (tcp_coords_nom[2] - zero_point[2])**2)
                 print(f"Theoretical distance: {(distance_theor * 1000):.2f} mm")
-                time.sleep(3)
-                #input()
+                #time.sleep(3)
+                input()
                 wire_len = self.get_wire_distance(self.null_value)
                 if wire_len > 0:
                     print(f"Wire lenght: {wire_len}")
@@ -222,8 +221,8 @@ class MCX:
                 last_index = pose[6]   
                 self.execute_moveJ(pose[:6])
                 print(f"Done pose {i + 2 + self.start_num}")
-                #input()
-                time.sleep(3)
+                input()
+                #time.sleep(3)
                 wire_len = self.get_wire_distance(self.null_value)
                 if wire_len > 0:
                     print(f"Wire lenght: {wire_len}")
