@@ -22,6 +22,8 @@ from math_routines import DEG
 PORT = '/dev/ttyUSB0'
 BAUD_RATE = 9600
 
+EXTRA_POINTS = ["LINEAR", "JOINT", "JOINT_CONTINUE", "END"]    # -2, -1, -3
+
 def get_parameters(path: str) -> None:
     try:
         with open(path) as f:
@@ -126,7 +128,7 @@ class MCX:
     def find_next_positive_index(self, dataset_poses, start_num):
         for i in range(len(dataset_poses)):
             #if dataset_poses[start_num + i, 6] >= 0:
-            if isinstance(dataset_poses[start_num + i, 6], str):
+            if dataset_poses[start_num + i, 6] not in EXTRA_POINTS:
                 return dataset_poses[start_num + i, 6]
         return -1
 
@@ -137,9 +139,9 @@ class MCX:
         else:
             for _ in range(len(previous_poses)):
                 prev_pose = previous_poses.pop()
-                if prev_pose[-1] == -1:
+                if prev_pose[-1] == "JOINT":
                     self.execute_moveJ(prev_pose[:6])
-                elif prev_pose[-1] == -2:
+                elif prev_pose[-1] == "LINEAR":
                     self.execute_moveL(prev_pose[:6])
             previous_poses.clear()
         time.sleep(2)
@@ -150,61 +152,69 @@ class MCX:
     def move_through_cal_dataset(self, dataset_poses: np.ndarray, zero_pose: np.ndarray, model):        
         zero_point = self.robot_PoseTransformer.calcJointToCartPose(zero_pose).jointtocartlist[0].cartpose.coordinates
 
-        result = np.array(dataset_poses[:, :8], dtype=object)
+        mask = np.zeros(shape=(dataset_poses.shape[0]))
+        mask = np.array([1 for pose in dataset_poses if pose[6] not in EXTRA_POINTS]) 
+        result = dataset_poses[mask][:, :8]
+        #result = np.array(dataset_poses[:, :8], dtype=object)
         
         self.execute_moveJ(zero_pose)
         self.null_value = self.get_wire_distance(0)
         previous_poses = []
-        last_index_extra_points = -1
+        last_index_extra_points = "JOINT"
         last_index = dataset_poses[0, 6]
+        res_index = 0
         for i, pose in enumerate(dataset_poses): 
-            if (last_index != pose[6] or last_index != self.find_next_positive_index(dataset_poses, i)) and isinstance(dataset_poses[i-1, 6], str) and pose[6] != -3:
+            if (last_index != pose[6] or last_index != self.find_next_positive_index(dataset_poses, i)) and dataset_poses[i-1, 6] not in EXTRA_POINTS and pose[6] != "JOINT_CONTINUE":
                 self.move_to_start(previous_poses, zero_point)
-            if isinstance(pose[6], float):
+            if pose[6] in EXTRA_POINTS:
                 print(f"Extra pose {i + 2 + self.start_num}")
-                if pose[6] == -1 or pose[6] == -3:
+                if pose[6] == "JOINT" or pose[6] == "JOINT_CONTINUE":
                     start_pose = self.joint_subscription.read()[0].value
-                    previous_poses.append([*start_pose, -1]) 
+                    previous_poses.append([*start_pose, "JOINT"]) 
                     self.execute_moveJ(pose[:6])
-                    result[i, 7] = -1
-                    result[i, 0:6] = self.joint_subscription.read()[0].value
+                    #result[i, 7] = -1
+                    #result[i, 0:6] = self.joint_subscription.read()[0].value
                    
-                elif pose[6] == -2:
+                elif pose[6] == "LINEAR":
                     start_coords = self.pose_subscription.read()[0].value
-                    previous_poses.append([*start_coords, -2]) 
+                    previous_poses.append([*start_coords, "LINEAR"]) 
                     pose_coords = self.robot_PoseTransformer.calcJointToCartPose(pose[:6]).jointtocartlist[0].cartpose.coordinates
                     self.execute_moveL(pose_coords)
-                    result[i, 7] = -1
-                    result[i, 0:6] = self.joint_subscription.read()[0].value
+                    #result[i, 7] = -1
+                    #result[i, 0:6] = self.joint_subscription.read()[0].value
+                elif pose[6] == "END":
+                    last_index_extra_points = -1
                 else:
                     raise IndexError("Wrong index")
-                result[i, 7] = -1
-                result[i, 0:6] = self.joint_subscription.read()[0].value
+                continue
+                #result[i, 7] = -1
+                #result[i, 0:6] = self.joint_subscription.read()[0].value
 
-            elif isinstance(dataset_poses[i - 1, 6], float) or pose[6] == last_index_extra_points:
+            elif (dataset_poses[i - 1, 6] in EXTRA_POINTS and dataset_poses[i - 1, 6] != "END") or pose[6] == last_index_extra_points:
                 last_index_extra_points = pose[6]
                 start_pose = self.joint_subscription.read()[0].value
-                previous_poses.append([*start_pose, -1]) 
+                previous_poses.append([*start_pose, "JOINT"]) 
 
                 print(f"Started pose {i + 2 + self.start_num}")     
+                
                 self.execute_moveJ(pose[:6])
-                print(f"Done pose {i + 2 + self.start_num}")
-                
-                
+                print(f"Done pose {i + 2 + self.start_num}")       
+                time.sleep(3)
+                #input()
                 tcp_coords_nom = self.robot_PoseTransformer.calcJointToCartPose(pose[:6]).jointtocartlist[0].cartpose.coordinates[0:3]
                 distance_theor = sqrt((tcp_coords_nom[0] - zero_point[0])**2 + (tcp_coords_nom[1] - zero_point[1])**2 + (tcp_coords_nom[2] - zero_point[2])**2)
                 print(f"Theoretical distance: {(distance_theor * 1000):.2f} mm")
-                #time.sleep(3)
-                input()
                 wire_len = self.get_wire_distance(self.null_value)
                 if wire_len > 0:
                     print(f"Wire lenght: {wire_len}")
                 
-                
                 #time.sleep(1)
-                result[i, 7] = wire_len
-                result[i, 0:6] = self.joint_subscription.read()[0].value
+
+                result[res_index, 7] = wire_len
+                result[res_index, 0:6] = self.joint_subscription.read()[0].value
                 last_index = pose[6]
+
+            
             else:            
                 print(f"Started pose {i + 2 + self.start_num}")     
                 tcp_coords_nom = self.robot_PoseTransformer.calcJointToCartPose(pose[:6]).jointtocartlist[0].cartpose.coordinates[0:3]
@@ -217,22 +227,23 @@ class MCX:
                 self.execute_moveL(vertical_offset_point)
                 #time.sleep(1)
                 vertical_offset_pose = self.joint_subscription.read()[0].value
-                
-                last_index = pose[6]   
+        
                 self.execute_moveJ(pose[:6])
                 print(f"Done pose {i + 2 + self.start_num}")
-                input()
-                #time.sleep(3)
+                time.sleep(3)
+                #input()
                 wire_len = self.get_wire_distance(self.null_value)
                 if wire_len > 0:
                     print(f"Wire lenght: {wire_len}")
+                result[res_index, 7] = wire_len
+                result[res_index, 0:6] = self.joint_subscription.read()[0].value
+                last_index = pose[6] 
 
-                result[i, 7] = wire_len
-                result[i, 0:6] = self.joint_subscription.read()[0].value
                 self.execute_moveJ(vertical_offset_pose)
                 
-                #time.sleep(1) 
-            add_line_csv((np.concatenate( (result[i, 0:6] / DEG, result[i, 6:]) )), "datasets/ARM95/wire/log.csv", model.fieldnames_options["wire_samples"])
+            result[res_index, 6] = pose[6]
+            add_line_csv((np.concatenate( (result[res_index, 0:6] / DEG, result[res_index, 6:]) )), "datasets/ARM95/wire/log.csv", model.fieldnames_options["wire_samples"])
+            res_index += 1
         self.move_to_start(previous_poses, zero_point)
         return result
     
