@@ -77,9 +77,9 @@
     "d_1", "theta_1"],
                   
   "wire_limits_l_mm": 30,
-  "wire_limits_h_mm": 10000,
-  "angle_limit_wire_deg": 75,
-  "angle_limit_z_deg": 75,
+  "wire_limits_h_mm": 1100,
+  "angle_limit_wire_deg": 45,
+  "angle_limit_z_deg": 45,
 
   "dynamic_constraints_deg": [
       {

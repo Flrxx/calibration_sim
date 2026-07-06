@@ -516,30 +516,75 @@ def correct_poses(model: hayati_model.HayatiModel):
     write_dataset(new_samples, model.contribution_dataset, model.fieldnames_options["wire_contributions"], tolerance=3) 
     print("Done")
 
-def generate_validation_dataset(model: hayati_model.HayatiModel, num_points: int = 50):
+def generate_validation_dataset(model: hayati_model.HayatiModel, num_points: int = 50, num_bins: int = 5):
     """
-    Генерирует случайные валидные позы методом Монте-Карло.
+    Генерирует случайные валидные позы методом Монте-Карло 
+    с равномерным распределением (стратификацией) по длине троса.
     """
     print(f"Запуск Монте-Карло: поиск {num_points} валидационных точек...")
+    print(f"Включена балансировка распределения длины троса (Корзин: {num_bins})")
+    
     valid_poses = []
     attempts = 0
     
     low_lim = model.joint_limits_general_l
     high_lim = model.joint_limits_general_h
     
-    while len(valid_poses) < num_points and attempts < 1000000:
+    # 1. Настройка корзин для длин троса (в метрах)
+    l_min = model.wire_limits[0]
+    l_max = model.wire_limits[1]
+    bin_edges = np.linspace(l_min, l_max, num_bins + 1)
+    bins = [[] for _ in range(num_bins)]
+    
+    # Рассчитываем квоты для каждой корзины (поровну, остаток раскидываем)
+    points_per_bin = num_points // num_bins
+    remainder = num_points % num_bins
+    bin_targets = [points_per_bin + (1 if i < remainder else 0) for i in range(num_bins)]
+    
+    strict_mode = True # Пока True - жестко следим за наполнением корзин
+    
+    while len(valid_poses) < num_points and attempts < 1500000:
         attempts += 1
-        q_rand = np.zeros(6)
         
-        # Полностью случайная генерация по всем суставам
-        for j in range(6):
-            q_rand[j] = np.random.uniform(low=low_lim[j], high=high_lim[j])
+        # Векторизованная генерация случайных углов (быстрее цикла)
+        q_rand = np.random.uniform(low=low_lim, high=high_lim)
             
         if model.is_pose_valid(q_rand) and not model.violates_dynamic_limits(q_rand):
-            valid_poses.append(q_rand)
             
+            if strict_mode:
+                # В строгом режиме проверяем длину троса
+                matrix = model.get_transition_matrix(q_rand, "nominal")
+                wire = matrix[0:3, 3] - model.zero_offset_nominal
+                wire_len = np.linalg.norm(wire)
+                
+                # Ищем нужную корзину для этой длины
+                bin_idx = -1
+                for i in range(num_bins):
+                    if bin_edges[i] <= wire_len <= bin_edges[i+1]:
+                        bin_idx = i
+                        break
+                        
+                # Если корзина еще не полная — забираем точку
+                if bin_idx != -1 and len(bins[bin_idx]) < bin_targets[bin_idx]:
+                    bins[bin_idx].append(q_rand)
+                    valid_poses.append(q_rand)
+            else:
+                # Если включился добор, берем любые валидные точки
+                valid_poses.append(q_rand)
+                
         if attempts % 50000 == 0:
-            print(f"  Прошло {attempts} попыток, найдено точек: {len(valid_poses)}")
+            if strict_mode:
+                status = [len(b) for b in bins]
+                print(f"  Попыток: {attempts}, найдено: {len(valid_poses)}/{num_points}. Корзины: {status}")
+            else:
+                print(f"  Попыток: {attempts}, найдено: {len(valid_poses)}/{num_points} (Свободный добор)")
+                
+        # 2. ПРЕДОХРАНИТЕЛЬ: Если за 500 000 попыток не смогли заполнить корзины,
+        # значит какие-то длины (например, самые короткие) физически недостижимы.
+        if strict_mode and attempts > 500000:
+            print("\n⚠️ Внимание: Не удается заполнить некоторые корзины.")
+            print("Вероятно, экстремальные длины физически недостижимы. Включаю свободный добор...")
+            strict_mode = False
             
     print(f"Готово! Найдено {len(valid_poses)} точек за {attempts} попыток.")
     return valid_poses
@@ -593,7 +638,6 @@ def export_validation_csv(model: hayati_model.HayatiModel, poses: list, output_f
         
     print(f"Валидационный датасет успешно сохранен в: {output_filepath}")
 
-
 def main(args):
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
@@ -612,7 +656,7 @@ def main(args):
     elif args.mode == 'correct':
         correct_poses(model)
     elif args.mode == 'validation':
-        validation_poses = generate_validation_dataset(model, num_points=args.tries_count)
+        validation_poses = generate_validation_dataset(model, num_points=args.tries_count, num_bins=args.num_bins)
         export_validation_csv(model, validation_poses, "datasets/ARM95/wire/validation_dataset.csv")
         #get_dataset_for_validation(model, args.tries_count, 15 * DEG, [100 / 1000, 600 / 1000], 15*DEG)
     else:
@@ -628,6 +672,7 @@ if __name__ == "__main__":
     parser.add_argument("-e", "--erase_previous", help="Erase previous generation result. Default: 'false'", default="true")
     parser.add_argument("-i", "--target_index", help="", type=str, default="theta_6")
     parser.add_argument("-n", "--tries_count", help="Number of tries. Default: 10", type=int, default=1000)
+    parser.add_argument("-b", "--num_bins", help="Number of bins for validation dataset. Default: 15", type=int, default=15)
     parser.add_argument("-a", "--angle_diff", help="Angle difference between poses. Default: 5", type=float, default=5)
     parser.add_argument("-l", "--len_diff", help="Lenght difference between poses, mm. Default: 2", type=float, default=5)
     parser.add_argument("-p", "--prev_eps", help="Epsilon for previous params. Default: 0.005", type=float, default=100)
