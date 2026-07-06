@@ -278,6 +278,9 @@ def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: i
     for i, value in enumerate(params_error_median):
         print(f"{model.error_list[i]}: {value:.3f}")
 
+    print(f"Score {np.linalg.norm(params_error_median) * 100}")
+
+
     data = read_dataset("results/ARM95/test_result.csv", ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'delta', 
                                                                    'x_nom', 'y_nom', 'z_nom', 'alpha_nom', 'beta_nom', 'gamma_nom',
                                                                    'x_est', 'y_est', 'z_est', 'alpha_est', 'beta_est', 'gamma_est'])

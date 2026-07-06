@@ -587,6 +587,7 @@ def generate_validation_dataset(model: hayati_model.HayatiModel, num_points: int
             strict_mode = False
             
     print(f"Готово! Найдено {len(valid_poses)} точек за {attempts} попыток.")
+    
     return valid_poses
 
 def export_validation_csv(model: hayati_model.HayatiModel, poses: list, output_filepath: str):
@@ -633,6 +634,8 @@ def export_validation_csv(model: hayati_model.HayatiModel, poses: list, output_f
         f"-1"
     ]
     rows.append(avg_row)
+
+    rows.sort(key=lambda x: float(x[6]))
     
     write_dataset(rows, output_filepath, headers, tolerance=3)
         

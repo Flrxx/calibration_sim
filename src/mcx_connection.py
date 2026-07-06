@@ -117,11 +117,11 @@ class MCX:
             value = -1
         return value
 
-    def execute_moveL(self, point: np.ndarray, velocity=0.1): #0.03
+    def execute_moveL(self, point: np.ndarray, velocity=0.03): #0.03
         self.motion_program.addMoveL([Waypoint(point)], velocity=velocity)
         self.execute_move()
     
-    def execute_moveJ(self, pose: np.ndarray, rotational_velocity=0.5): #0.1
+    def execute_moveJ(self, pose: np.ndarray, rotational_velocity=0.2): #0.1
         self.motion_program.addMoveJ([Waypoint(pose)], rotational_velocity=rotational_velocity)
         self.execute_move()
 
@@ -263,41 +263,70 @@ class MCX:
         
         zero_point = self.robot_PoseTransformer.calcJointToCartPose(zero_pose).jointtocartlist[0].cartpose.coordinates
 
-        result = np.zeros(shape=(len(dataset_poses), len(model.fieldnames_options["test_result"])))
+
+        mask = np.zeros(shape=(dataset_poses.shape[0]))
+        mask = np.array([1 for pose in dataset_poses if pose[6] not in EXTRA_POINTS]) 
+        result = dataset_poses[mask]
+        i_result = 0
+        #result = np.zeros(shape=(len(dataset_poses), len(model.fieldnames_options["test_result"])))
         #dataset_poses = dataset_poses[:, :6]
         
         self.execute_moveJ(zero_pose)
         self.null_value = self.get_wire_distance(0)
+        flag = 0
+        previous_poses = []
         for i, pose in enumerate(dataset_poses): 
-            print(f"Started pose {i + 2 + self.start_num}")     
-            tcp_coords_nom = self.robot_PoseTransformer.calcJointToCartPose(pose[:6]).jointtocartlist[0].cartpose.coordinates[0:3]
-            distance_theor = sqrt((tcp_coords_nom[0] - zero_point[0])**2 + (tcp_coords_nom[1] - zero_point[1])**2 + (tcp_coords_nom[2] - zero_point[2])**2)
+            if pose[6] == "JOINT":
+                print(f"Extra pose {i + 2 + self.start_num}") 
+                flag = 1
+                start_pose = self.joint_subscription.read()[0].value
+                previous_poses.append([*start_pose, "JOINT"]) 
+
+                self.execute_moveJ(pose[:6])
+                start_pose = self.joint_subscription.read()[0].value
+                previous_poses.append([*start_pose, "JOINT"]) 
+                continue
+
+            print(f"Started pose {i + 2 + self.start_num}") 
+            if flag == 1:
+                self.execute_moveJ(pose[:6])
+                start_pose = self.joint_subscription.read()[0].value
+                previous_poses.append([*start_pose, "JOINT"]) 
+
+            else:
+                tcp_coords_nom = self.robot_PoseTransformer.calcJointToCartPose(pose[:6]).jointtocartlist[0].cartpose.coordinates[0:3]
+                distance_theor = sqrt((tcp_coords_nom[0] - zero_point[0])**2 + (tcp_coords_nom[1] - zero_point[1])**2 + (tcp_coords_nom[2] - zero_point[2])**2)
+                
+                vertical_offset_point =  copy.deepcopy(zero_point)
+                vertical_offset_point[2] += 0.3
+                self.execute_moveL(vertical_offset_point)
             
-            vertical_offset_point =  copy.deepcopy(zero_point)
-            vertical_offset_point[2] += distance_theor
             print(f"Theoretical distance: {(distance_theor * 1000):.2f} mm")
         
-            #self.execute_moveL(vertical_offset_point)
             #time.sleep(1)
             vertical_offset_pose = self.joint_subscription.read()[0].value
             
             self.execute_moveJ(pose[:6])
             print(f"Done pose {i + 2 + self.start_num}")
+            #input()
             time.sleep(2)
             wire_len = self.get_wire_distance(self.null_value)
             if wire_len > 0:
                 print(f"Wire lenght: {wire_len}")
 
-            result[i, 0:6] = self.joint_subscription.read()[0].value
-            result[i, 6] = np.linalg.norm(calculate_distance(model, result[i, 0:6], "nominal"))
-            result[i, 7] = np.linalg.norm(calculate_distance(model, result[i, 0:6], "estimated"))
-            result[i, 8] = wire_len / 1000
-            result[i, 9] = abs(wire_len - result[i, 6]) - abs(wire_len - result[i, 7])
-            add_line_csv((result[i]), "datasets/ARM95/wire/log.csv", model.fieldnames_options["test_result"])
+            result[i_result, 0:6] = self.joint_subscription.read()[0].value
+            result[i_result, 6] = np.linalg.norm(calculate_distance(model, result[i_result, 0:6], "nominal"))
+            result[i_result, 7] = np.linalg.norm(calculate_distance(model, result[i_result, 0:6], "estimated"))
+            result[i_result, 8] = wire_len / 1000
+            result[i_result, 9] = abs(wire_len - result[i_result, 6]) - abs(wire_len - result[i_result, 7])
+            add_line_csv(np.concatenate( (result[i_result, 0:6] / DEG, result[i_result, 6:] * 1000)  ), "datasets/ARM95/wire/log.csv", model.fieldnames_options["test_result"])
+           
+            i_result += 1
             
-            self.execute_moveJ(vertical_offset_pose)
-            
-            self.move_to_start([], zero_point)
+            if flag == 0:
+                self.execute_moveJ(vertical_offset_pose)
+        
+        self.move_to_start(previous_poses, zero_point)
         return result
 
     def write_validation_dataset(self, model: hayati_model.HayatiModel):              
@@ -305,14 +334,19 @@ class MCX:
         "q1", "q2", "q3", "q4", "q5", "q6", 
         "d_nom", "d_real", "d_est", "diff"
         ])  
+
+        mask = np.zeros(shape=(validation_dataset.shape[0]))
+        mask = np.array([1 for pose in validation_dataset if pose[6] not in EXTRA_POINTS]) 
+        #result = dataset_poses[mask][:, :8]
+
         validation_dataset[:, :6] *= DEG
-        validation_dataset[:, 6:] /= 1000
+        validation_dataset[mask][:, 6:] /= 1000
         validation_dataset = validation_dataset[self.start_num:, :]
-        validation_dataset = self.move_through_validation_dataset(validation_dataset, model.zero_wire_angles.copy(), model)
+        validation_result = self.move_through_validation_dataset(validation_dataset, model.zero_wire_angles.copy(), model)
         
-        validation_dataset[:, :6] /= DEG
-        validation_dataset[:, 6:] *= 1000
-        write_dataset(validation_dataset, "results/ARM95/validation_results.csv", model.fieldnames_options["test_result"])
+        validation_result[:, :6] /= DEG
+        validation_result[:, 6:] *= 1000
+        write_dataset(validation_result, "results/ARM95/validation_results.csv", model.fieldnames_options["test_result"])
         print("Done")
 
     def calculate_wire_angles(self, model: hayati_model.HayatiModel, pose: np.ndarray):
