@@ -50,12 +50,12 @@
   ],
 
   "zero_wire_angles":[
-    14.55,
-    24.53,
-    141.47,
-    -76,
+    14.53,
+    24.85,
+    141.04,
+    -75.87,
     90.000,
-    -14.55
+    -14.51
   ],
   "encoder_abs_tolerance_percent": 0.08,
   "encoder_resolution_mm": 0.05,

@@ -309,7 +309,7 @@ class MCX:
             self.execute_moveJ(pose[:6])
             print(f"Done pose {i + 2 + self.start_num}")
             #input()
-            time.sleep(2)
+            time.sleep(3)
             wire_len = self.get_wire_distance(self.null_value)
             if wire_len > 0:
                 print(f"Wire lenght: {wire_len}")
