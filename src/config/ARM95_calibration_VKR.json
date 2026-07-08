@@ -81,11 +81,11 @@
   "distance_delta_mm": 1.0,
   "angle_delta_deg": 1.0,
   
-  "a_delta_mm": 2,
-  "alpha_delta_deg": 0.5,
-  "d_delta_mm": 2,
-  "theta_delta_deg": 0.5,
-  "beta_delta_deg": 0.5,
+  "a_delta_mm": 1,
+  "alpha_delta_deg": 0.3,
+  "d_delta_mm": 1,
+  "theta_delta_deg": 0.3,
+  "beta_delta_deg": 0.3,
 
   "ignore_errors_list": [],
   "test_samples_number": 100

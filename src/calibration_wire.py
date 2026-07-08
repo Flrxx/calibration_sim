@@ -22,15 +22,19 @@ from math_routines import DEG
 from graph import plot_side_by_side_hist, plot_dh_comparison, plot_all_6_axes, plot_calibration_errors_from_data
 import itertools
 
+EXTRA_POINTS = ["LINEAR", "JOINT", "JOINT_CONTINUE", "END"]    # -2, -1, -3
+
 
 def execute_calibration(model: hayati_model.HayatiModel, dataset=[], is_real=0):
     if len(dataset) == 0:
         is_real = 1
         dataset = read_dataset(model.calibration_dataset, model.fieldnames_options["wire_samples"]) 
-        #mask = dataset[:, 6] >= 0
-        #dataset = dataset[mask]
         dataset[:, 0:6] *= DEG
         dataset[:, 7] /= 1000
+
+    mask = np.array([val not in EXTRA_POINTS for val in dataset[:, 6]])
+    dataset = dataset[mask]
+
     param_errors = np.zeros(len(model.error_list))
     nom_param_errors = np.zeros(len(model.error_list))
     est_param_errors = np.zeros(len(model.error_list))
@@ -91,6 +95,7 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[], is_real=0):
             else:
                 model.estimated_dh[param_num][param_letter_num] = final_value 
 
+    #run_global_polish(model, dataset, limit_mm=0.5, limit_deg=0.3)
 
     if not is_real:
         # print(nom_params[:, :4])
@@ -278,7 +283,11 @@ def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: i
     for i, value in enumerate(params_error_median):
         print(f"{model.error_list[i]}: {value:.3f}")
 
-    print(f"Score {np.linalg.norm(params_error_median) * 100}")
+    mask_positive = params_error_median > 0
+    mask_negative = params_error_median < 0
+
+
+    print(f"Score {(np.linalg.norm(params_error_median[mask_positive]) - np.linalg.norm(params_error_median[mask_negative])) * 100}")
 
 
     data = read_dataset("results/ARM95/test_result.csv", ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'delta', 
@@ -605,80 +614,90 @@ def cluster_and_visualize_poses(model: hayati_model.HayatiModel, target_param, n
     
     return target_poses, labels
 
-def _worker_task(args):
-    """Изолированная задача для одного процесса."""
-    combo, model, calibration_data, validation_data = args
+def calculate_estimated_distance(model, angles, zero_pos):
+    """Вычисляет предсказанное вытягивание троса (в метрах)"""
+    matrix = model.get_transition_matrix(angles, "estimated")
+    pos = matrix[0:3, 3]
+    distance = sqrt((pos[0] - zero_pos[0])**2 + (pos[1] - zero_pos[1])**2 + (pos[2] - zero_pos[2])**2)
+    return distance
+
+def run_global_polish(model: hayati_model.HayatiModel, dataset: np.ndarray, limit_mm=0.5, limit_deg=0.3):
+    # Фильтруем битые строки и переводим углы в радианы
+    #mask = np.array([isinstance(val, str) for val in dataset[:, 6]])
+    #dataset = dataset[mask]
+    #dataset[:, 0:6] = dataset[:, 0:6].astype(float) * DEG
     
-    # Сбрасываем параметры до номинала внутри процесса перед калибровкой
-    model.reset_estimated_dh()
+    # Расстояния в датасете обычно в мм. Переводим в метры для внутренних расчетов
+    #real_distances_m = dataset[:, 7].astype(float) / 1000.0
+    poses_rad = dataset[:, 0:6].astype(float)
+    real_distances_m = dataset[:, 7].astype(float)
     
-    # Фильтрация данных
-    mask = np.isin(calibration_data[:, 6], combo)
-    filtered_data = calibration_data[mask]
+    # print(f"Количество калибровочных точек: {len(poses_rad)}")
+    # print(f"Количество полируемых параметров: {len(params_to_tune)}")
+
+    params_to_tune = set(dataset[:, 6])
     
-    # Вычисление
-    execute_calibration(model, dataset=filtered_data, is_real=1)
-    score = validate_wire(model, validation_data, is_real=1)[-1, -1]
+    x0 = []
+    lower_bounds = []
+    upper_bounds = []
+    param_indices = []
     
-    return combo, score
-
-
-def find_best_combination(model: hayati_model.HayatiModel, calibration_data, validation_data):
-    """Перебирает все комбинации уникальных чисел из 7-го столбца
-    в параллельных процессах и находит лучшую метрику.
-    """
-    mask = calibration_data[:, 6] >= 0
-    calibration_data = calibration_data[mask]
-
-    unique_identifiers = np.unique(calibration_data[:, 6]).astype(int)
-    n_unique = len(unique_identifiers)
-
-    total_combinations = 2**n_unique - 1
-    print(f"Уникальных чисел в 7-м столбце: {n_unique}")
-    print(f"Всего будет проверено непустых комбинаций: {total_combinations}")
-
-    if n_unique > 20:
-        print("⚠️ Внимание: уникальных чисел слишком много! Комбинаторный взрыв займет много времени.")
+    # Настраиваем границы (Bounds): +- 0.5 мм и +- 0.3 градуса
+    LIMIT_MM = limit_mm / 1000.0 # 0.5 мм в метрах
+    LIMIT_RAD = limit_deg * DEG   # 0.3 градуса в радианах
+    
+    for param_name in params_to_tune:
+        p_num, p_let = model.params_from_letters(param_name)
+        current_val = model.estimated_dh[p_num][p_let]
         
-    counter = 0
-    progress_step = max(1, total_combinations // 10)
-    
-    best_score = float("-inf")
-    best_combination = None
-    
-    # Фиксируем время старта перед запуском пула
-    start_time = time.time()
-
-    # Генерируем ленивый генератор тасков, чтобы не забивать RAM всеми комбинациями сразу
-    tasks = (
-        (combo, model, calibration_data, validation_data)
-        for r in range(1, n_unique + 1)
-        for combo in itertools.combinations(unique_identifiers, r)
-    )
-
-    # Запуск пула процессов (по умолчанию займет все доступные ядра CPU)
-    with Pool() as pool:
-        # imap_unordered возвращает результаты сразу по мере готовности, 
-        # что идеально подходит для сохранения плавности логов прогресса
-        for combo, score in pool.imap_unordered(_worker_task, tasks, chunksize=5):
+        x0.append(current_val)
+        param_indices.append((p_num, p_let))
+        
+        # Определяем тип параметра для правильных границ
+        if 'alpha' in param_name or 'theta' in param_name or 'beta' in param_name:
+            lower_bounds.append(current_val - LIMIT_RAD)
+            upper_bounds.append(current_val + LIMIT_RAD)
+        else:
+            lower_bounds.append(current_val - LIMIT_MM)
+            upper_bounds.append(current_val + LIMIT_MM)
             
-            # Фиксируем лучший результат в главном процессе
-            if score > best_score:
-                best_score = score
-                best_combination = combo
-                
-            # === ЛОГИРОВАНИЕ КАЖДЫЕ 10% ===
-            counter += 1
-            if counter % progress_step == 0 or counter == total_combinations:
-                elapsed_time = time.time() - start_time
-                percent = (counter / total_combinations) * 100
-                print(
-                    f"Выполнено: {percent:3.0f}% | "
-                    f"Операций: {counter}/{total_combinations} | "
-                    f"Прошло времени: {elapsed_time:.2f} сек"
-                )
+    x0 = np.array(x0)
 
-    return best_combination, best_score
+    def objective_function(x):
+        # 1. Обновляем модель
+        for i, (p_num, p_let) in enumerate(param_indices):
+            model.estimated_dh[p_num][p_let] = x[i]
+            
+        # 2. КРИТИЧНО: Пересчитываем нулевую позицию фланца!
+        zero_pos = model.get_transition_matrix(model.zero_wire_angles, "estimated")[0:3, 3]
+        
+        # 3. Считаем невязки
+        residuals = np.zeros(len(poses_rad))
+        for i, angles in enumerate(poses_rad):
+            d_theor = calculate_estimated_distance(model, angles, zero_pos)
+            residuals[i] = d_theor - real_distances_m[i]
+            
+        return residuals
+
+    #print("Запуск оптимизатора Trust Region Reflective (trf) с жесткими границами...")
+    res = least_squares(
+        objective_function, 
+        x0=x0, 
+        bounds=(lower_bounds, upper_bounds),
+        method='trf', # Метод 'trf' поддерживает границы (bounds), в отличие от 'lm'
+        x_scale='jac', 
+        ftol=1e-8, 
+        xtol=1e-8,
+        verbose=0
+    )
+    
+    # Фиксируем финальные отполированные значения
+    for i, (p_num, p_let) in enumerate(param_indices):
+        model.estimated_dh[p_num][p_let] = res.x[i]
+        
+    final_rmse_mm = np.sqrt(np.mean(res.fun**2)) * 1000.0
+    #print(f"Полировка завершена успешно! Финальная RMSE на калибровке: {final_rmse_mm:.4f} мм")
+
 
 def main(args):
     with open(args.config, 'r') as config_file:
