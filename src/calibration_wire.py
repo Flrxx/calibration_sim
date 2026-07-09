@@ -1,6 +1,7 @@
 import numpy as np
 from math import cos, sin, pi, sqrt, atan2, asin, log10, acos, copysign
 from typing import Union
+from pytest import param
 from scipy.optimize import minimize_scalar, minimize, Bounds, least_squares
 from matplotlib import pyplot as plt
 from sklearn.cluster import KMeans
@@ -24,8 +25,7 @@ import itertools
 
 EXTRA_POINTS = ["LINEAR", "JOINT", "JOINT_CONTINUE", "END"]    # -2, -1, -3
 
-
-def execute_calibration(model: hayati_model.HayatiModel, dataset=[], is_real=0):
+def execute_calibration(model: hayati_model.HayatiModel, dataset=[], is_real=0, passes=1, polish=False):
     if len(dataset) == 0:
         is_real = 1
         dataset = read_dataset(model.calibration_dataset, model.fieldnames_options["wire_samples"]) 
@@ -35,6 +35,12 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[], is_real=0):
     mask = np.array([val not in EXTRA_POINTS for val in dataset[:, 6]])
     dataset = dataset[mask]
 
+    calibration_mask = np.zeros(len(dataset), dtype=bool)
+    for i, pose in enumerate(dataset):
+        if pose[6] in model.calibration_mask:
+            calibration_mask[i] = True
+    dataset = dataset[calibration_mask]
+
     param_errors = np.zeros(len(model.error_list))
     nom_param_errors = np.zeros(len(model.error_list))
     est_param_errors = np.zeros(len(model.error_list))
@@ -42,10 +48,10 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[], is_real=0):
 
     nom_params = model.get_readable_params("nominal")
     real_params = model.get_readable_params("real")
-    for j in range(1):
+    for _ in range(passes):
         for i in range (len(model.error_list)):
             single_param_dataset = dataset[dataset[:, 6] == model.error_list[i]]
-            # if i == 7:
+            # if i == 7:                                                  
             #     print(single_param_dataset)
 
             param_num, param_letter_num = model.params_from_letters(model.error_list[i])
@@ -95,7 +101,8 @@ def execute_calibration(model: hayati_model.HayatiModel, dataset=[], is_real=0):
             else:
                 model.estimated_dh[param_num][param_letter_num] = final_value 
 
-    #run_global_polish(model, dataset, limit_mm=0.5, limit_deg=0.3)
+    if(polish):
+        run_global_polish(model, dataset, limit_mm=5, limit_deg=5)
 
     if not is_real:
         # print(nom_params[:, :4])
@@ -368,6 +375,8 @@ def write_validation_dataset(model: hayati_model.HayatiModel, is_real=False):
         source_path = "results/ARM95/validation_results_real.csv"
     else:
         source_path = "results/ARM95/validation_results_sim.csv"
+
+    #source_path = "results/ARM95/validation_results_calib.csv"
 
     validation_dataset = read_dataset(source_path, model.fieldnames_options["test_result"])
     validation_dataset[:, :6] *= DEG
@@ -705,7 +714,7 @@ def main(args):
     model = hayati_model.HayatiModel(config)
     if args.mode == "calibration":
         if args.is_real:
-            execute_calibration(model)
+            execute_calibration(model, passes=args.passes, polish=args.polish)
             write_results(model)
             write_validation_dataset(model, args.is_real)
             data = read_dataset("results/ARM95/validation_results_real.csv", ['q1','q2','q3','q4','q5','q6','d_nom','d_est','d_encoder','diff'])
@@ -747,6 +756,8 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--i_target", help="", type=int, default=10)
     parser.add_argument("-f", "--floor", help="", type=float, default=0.001)
     parser.add_argument("-t", "--target_param", help="", type=str, default="a_6")
+    parser.add_argument("-p", "--passes", help="", type=int, default=1)
+    parser.add_argument("--polish", action='store_true')
 
     args = parser.parse_args()
     main(args)

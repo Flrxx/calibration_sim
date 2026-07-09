@@ -75,6 +75,21 @@
     "beta_2", "alpha_1", "a_1",
     
     "d_1", "theta_1"],
+
+  "calibration_mask":     [
+    "beta_3",
+    "theta_2",
+    "theta_3",
+    "a_4",
+    "alpha_3",
+    "a_2",
+    "beta_2",
+    "alpha_5",
+    "d_6",
+    "a_6",
+    "theta_5",
+    "alpha_6"
+], 
                   
   "wire_limits_l_mm": 30,
   "wire_limits_h_mm": 10000,

@@ -15,8 +15,6 @@ import copy
 from math_routines import DEG
 import warnings
 
-from test_3 import is_pose_valid
-
 def calculate_derivatives(model: hayati_model.HayatiModel, angles: Union[list, np.ndarray], eps=1e-5):
     """
     Вычисляет первую и вторую производные длины троса по каждому параметру.

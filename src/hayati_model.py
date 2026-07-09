@@ -61,6 +61,7 @@ class HayatiModel:
         self.encoder_abs_tolerance = config["encoder_abs_tolerance_percent"] / 100
         self.encoder_resolution = config["encoder_resolution_mm"] / 1000
         self.error_list = config["error_list"]
+        self.calibration_mask = config["calibration_mask"]
         
         self.angle_idexes = [i for i, e in enumerate(self.error_list) if any(sub in e for sub in ("alpha", "theta", "beta"))]
         self.fieldnames_options = {
