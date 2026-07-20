@@ -20,6 +20,7 @@ class HayatiModel:
         self.generation_output = config['generation_output']
         self.contribution_dataset = config['contribution_dataset']
         self.calibration_dataset = config['calibration_dataset']
+        self.wrist_dataset = config['wrist_dataset']
 
         self.test_dataset_file = config['test_dataset_file']
         self.results_file = config["results_file"]
@@ -62,6 +63,8 @@ class HayatiModel:
         self.encoder_resolution = config["encoder_resolution_mm"] / 1000
         self.error_list = config["error_list"]
         self.calibration_mask = config["calibration_mask"]
+        self.wrist_params = config["wrist_params"]
+
         
         self.angle_idexes = [i for i, e in enumerate(self.error_list) if any(sub in e for sub in ("alpha", "theta", "beta"))]
         self.fieldnames_options = {

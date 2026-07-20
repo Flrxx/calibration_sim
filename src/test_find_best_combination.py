@@ -80,7 +80,7 @@ def run_auto_selection_and_test(model: hayati_model.HayatiModel, train_path: str
     full_val_dataset[:, 6:] /= 1000
 
     # 2. Случайное перемешивание и разделение (Shuffle & Split)
-    np.random.seed() # Фиксируем seed для стабильного сплита
+    np.random.seed(42) # Фиксируем seed для стабильного сплита
     indices = np.arange(len(full_val_dataset))
     np.random.shuffle(indices)
     
@@ -113,7 +113,7 @@ def run_auto_selection_and_test(model: hayati_model.HayatiModel, train_path: str
         
         current_diff, is_stable = test_parameter_set(model, train_dataset, val_subset, test_params)
         
-        if is_stable and current_diff >= best_diff:
+        if is_stable and current_diff > best_diff:
             improvement = current_diff - best_diff if best_diff > -100 else current_diff
             print(f"  [+] УДАЛЕН '{param:<8}' | Новый diff: {current_diff:+.4f} (Улучшение: +{improvement:.4f} мм)")
             current_params = test_params
