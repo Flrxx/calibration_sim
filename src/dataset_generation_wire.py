@@ -430,9 +430,9 @@ def measure_all_distances(model, dataset=[]):
         
     return dataset
 
-def make_calibration_dataset(model: hayati_model.HayatiModel):
+def make_calibration_dataset(model: hayati_model.HayatiModel, dataset=[]):
     model.jac_DH_0 = calculate_jac_DH_params(model, model.zero_wire_angles)
-    dataset = measure_all_distances(model)
+    dataset = measure_all_distances(model, dataset)
     dataset[:, 0:6] *= DEG
     write_dataset(dataset, model.calibration_dataset, model.fieldnames_options["wire_samples"], tolerance=6) 
 

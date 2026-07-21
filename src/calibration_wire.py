@@ -25,99 +25,30 @@ import itertools
 
 EXTRA_POINTS = ["LINEAR", "JOINT", "JOINT_CONTINUE", "END"]    # -2, -1, -3
 
-def execute_calibration(model: hayati_model.HayatiModel, dataset=[], is_real=0, passes=1, polish=False):
-    if len(dataset) == 0:
-        is_real = 1
-        dataset = read_dataset(model.calibration_dataset, model.fieldnames_options["wire_samples"]) 
-        dataset[:, 0:6] *= DEG
-        dataset[:, 7] /= 1000
-
-    mask = np.array([val not in EXTRA_POINTS for val in dataset[:, 6]])
-    dataset = dataset[mask]
-
+def step_by_step_base_calibration(model: hayati_model.HayatiModel, dataset=[], is_real=0):
     calibration_mask = np.zeros(len(dataset), dtype=bool)
     for i, pose in enumerate(dataset):
         if pose[6] in model.calibration_mask:
             calibration_mask[i] = True
     dataset = dataset[calibration_mask]
+    
+    for i in range (len(model.base_params)):
+        single_param_dataset = dataset[dataset[:, 6] == model.base_params[i]]
 
-    param_errors = np.zeros(len(model.error_list))
-    nom_param_errors = np.zeros(len(model.error_list))
-    est_param_errors = np.zeros(len(model.error_list))
-    params_values = np.zeros(shape=(len(model.error_list), 2))
+        param_num, param_letter_num = model.params_from_letters(model.base_params[i])
+        if(len(single_param_dataset) == 0):
+            continue        
 
-    nom_params = model.get_readable_params("nominal")
-    real_params = model.get_readable_params("real")
-    for _ in range(passes):
-        for i in range (len(model.error_list)):
-            single_param_dataset = dataset[dataset[:, 6] == model.error_list[i]]
-            # if i == 7:                                                  
-            #     print(single_param_dataset)
+        optimizing_param = calibrate_single_param(model, single_param_dataset)     
+        
+        final_value = optimizing_param.x[0]
+        model.estimated_dh[param_num][param_letter_num] = final_value 
 
-            param_num, param_letter_num = model.params_from_letters(model.error_list[i])
-            if(len(single_param_dataset) == 0):
-                nominal_value = nom_params[param_num][param_letter_num] 
-                real_value = real_params[param_num][param_letter_num]
-                start_error = nominal_value - real_value  
-                nom_param_errors[i] = start_error
-                est_param_errors[i] = start_error
-                continue        
-
-            optimizing_param = calibrate_single_param(model, single_param_dataset)     
-            
-            final_value = optimizing_param.x[0]
-            # if i == 7:
-            #     print(final_value)
-            if not is_real:
-                model.estimated_dh[param_num][param_letter_num] = final_value 
-
-                est_params = model.get_readable_params("estimated")
-
-                nominal_value = nom_params[param_num][param_letter_num] #model.nominal_dh[param_num][param_letter_num]
-                real_value = real_params[param_num][param_letter_num] #model.real_dh[param_num][param_letter_num]
-                final_value = est_params[param_num][param_letter_num]
-                
-                final_error = final_value - real_value
-                start_error = nominal_value - real_value  
-
-                if (real_value != 0):         
-                    start_error_rel = start_error/real_value
-                    final_error_rel = final_error/real_value
-                    # print(f"start {i}: {start_error_rel}")
-                    # print(f"end {i}: {final_error_rel}")
-
-                else:
-                    start_error_rel = 100
-                    final_error_rel = 100
-
-                nom_param_errors[i] = start_error
-                est_param_errors[i] = final_error
-                if start_error_rel != 0:
-                    param_errors[i] = (abs(start_error) - abs(final_error))# / abs(start_error_rel) * 100 #%
-                    #print(param_errors)
-                else:
-                    param_errors[i] = 0
-                
-            else:
-                model.estimated_dh[param_num][param_letter_num] = final_value 
-
-    if(polish):
-        run_global_polish(model, dataset, limit_mm=5, limit_deg=5)
-
-    if not is_real:
-        # print(nom_params[:, :4])
-        # print()
-        # print(est_params[:, :4])
-        # print()
-        # print(real_params[:, :4])
-
-        return [param_num, param_letter_num], param_errors, nom_param_errors, est_param_errors
-    else:
-        return True
+    return True
 
 def calibrate_single_param(model: hayati_model.HayatiModel, dataset: Union[np.ndarray, list]): 
-    param_index = int(model.error_list.index(dataset[0, 6]))
-    param_num, param_letter_num = model.params_from_letters(model.error_list[param_index])
+    param_index = int(model.base_params.index(dataset[0, 6]))
+    param_num, param_letter_num = model.params_from_letters(model.base_params[param_index])
     real_distances = dataset[:,7]
 
     def loss_function(optimizing_param):
@@ -133,7 +64,7 @@ def calibrate_single_param(model: hayati_model.HayatiModel, dataset: Union[np.nd
         
         return error
 
-    #print(f"Optimizing param {model.error_list[param_index]}...")
+    #print(f"Optimizing param {model.base_params[param_index]}...")
     if (param_index in model.angle_idexes):
         bounds = Bounds(model.nominal_dh[param_num][param_letter_num] - 2 * DEG, 
                         model.nominal_dh[param_num][param_letter_num] + 2 * DEG) # [-2 * DEG, 2 * DEG]
@@ -211,104 +142,6 @@ def check_results(model: hayati_model.HayatiModel, last_indexes: list):
                      tolerance=3)
     return avg_nom_error, avg_est_error, avg_est_error_prev
 
-def _calibrate_batch(model: hayati_model.HayatiModel, tries_count, generate, is_real=False):
-    copy_model = copy.deepcopy(model)
-    local_param_errors = np.zeros(len(model.error_list))
-    local_nom_param_errors = np.zeros(len(model.error_list))
-    local_est_param_errors = np.zeros(len(model.error_list))
-
-    local_nominal_error = 0.0
-    local_estimated_error = 0.0
-    local_estimated_error_prev = 0.0
-    for _ in range(tries_count):
-
-        copy_model.reset_estimated_dh()
-        
-        if generate:
-            new_dh = generate_real_dh(copy_model)
-            copy_model.change_real_dh(new_dh)
-        dataset = measure_all_distances(copy_model)
-
-        last_indexes, param_errors_new, nom_param_errors_new, est_param_errors_new  = execute_calibration(copy_model, dataset=dataset) 
-        #print(param_errors_new)
-        local_param_errors += param_errors_new
-        local_nom_param_errors += np.abs(nom_param_errors_new)
-        local_est_param_errors +=  np.abs(est_param_errors_new)
-        
-        new_nom, new_est, new_esp_prev = check_results(copy_model, last_indexes)
-        local_nominal_error += new_nom
-        local_estimated_error += new_est
-        local_estimated_error_prev += new_esp_prev        
-    
-    #print(local_param_errors)
-    local_param_errors /= (tries_count)
-    local_nom_param_errors /= (tries_count)
-    local_est_param_errors /= (tries_count)
-
-    #print(local_param_errors)
-    local_nominal_error /= tries_count
-    local_estimated_error /= tries_count
-    local_estimated_error_prev /= tries_count
-
-    if tries_count == 1:
-        write_validation_dataset(copy_model, is_real)
-
-    return local_nominal_error, local_estimated_error, local_estimated_error_prev, local_param_errors, local_nom_param_errors, local_est_param_errors
-
-def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: int, genarate: bool, draw: bool, ):
-    num_cores = cpu_count()
-    chunk_size = max(1, (tries_num // num_cores))
-
-    tasks = []
-    for _ in range(min(num_cores, tries_num)):
-        current_tries = chunk_size
-        if current_tries > 0:
-            tasks.append((model, chunk_size, genarate))        
-
-    with Pool(processes=num_cores) as pool:
-        results = pool.starmap(_calibrate_batch, tasks)
-
-    nominal_error = [x[0] for x in results]
-    estimated_error = [x[1] for x in results]
-    estimated_error_prev = [x[2] for x in results]
-    params_error = np.array([x[3] for x in results])
-    params_nom_error = np.array([x[4] for x in results])
-    params_est_error = np.array([x[5] for x in results])
-
-    #print(params_error)
-
-    nominal_error_median = sum(nominal_error)/len(nominal_error)
-    estimated_error_median = sum(estimated_error)/len(estimated_error)
-    estimated_error_prev_median = sum(estimated_error_prev)/len(estimated_error_prev)
-    params_error_median = np.sum(params_error, axis=0)/len(params_error)
-    params_nom_error_median = np.sum(params_nom_error, axis=0)/len(params_error)
-    params_est_error_median = np.sum(params_est_error, axis=0)/len(params_error)
-
-    print(f"Nominal error: {nominal_error_median:.6f}\nAfter calibration: {estimated_error_median:.6f}\n\nDifference: {(nominal_error_median - estimated_error_median):.6f}")
-    print(f"Previous difference: {(nominal_error_median - estimated_error_prev_median):.6f}\n\nContribution of new: {(estimated_error_prev_median - estimated_error_median):.6f}")
-    #printable_res = {param: value for (param, value) in zip(model.error_list, params_error_median)}
-    for i, value in enumerate(params_error_median):
-        print(f"{model.error_list[i]}: {value:.3f}")
-
-    mask_positive = params_error_median > 0
-    mask_negative = params_error_median < 0
-
-
-    print(f"Score {(np.linalg.norm(params_error_median[mask_positive]) - np.linalg.norm(params_error_median[mask_negative])) * 100}")
-
-
-    data = read_dataset("results/ARM95/test_result.csv", ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'd_nom', 'd_est', 'delta', 
-                                                                   'x_nom', 'y_nom', 'z_nom', 'alpha_nom', 'beta_nom', 'gamma_nom',
-                                                                   'x_est', 'y_est', 'z_est', 'alpha_est', 'beta_est', 'gamma_est'])
-    data_before = data[:, 6]
-    data_after = data[:, 7]
-    if draw:
-        plot_side_by_side_hist(data_before, data_after)
-        plot_dh_comparison(np.abs(params_nom_error_median), np.abs(params_est_error_median))
-        plot_all_6_axes(data[:, 9:15], data[:, 15:])
-        
-        
-
 def write_results(model: hayati_model.HayatiModel):
     # Получаем ВСЕ матрицы (включая базовую, чтобы было на что инвертировать первую)
     all_tfs = model.get_all_transition_matrixes([0, 0, 0, 0, 0, 0], 'estimated')
@@ -347,7 +180,6 @@ def write_results(model: hayati_model.HayatiModel):
     print(est_params[:, :4])
 
 def validate_wire(model: hayati_model.HayatiModel, validation_dataset, is_real):
-
     res = np.zeros(shape=(validation_dataset.shape)) 
     for i, line in enumerate(validation_dataset[:-1]):
         if line[8] <= 0:
@@ -401,7 +233,7 @@ def _calibrate_list_of_dh(model: hayati_model.HayatiModel, i_target, dataset, dh
     for i in range(int(len(dh_list)/height)):
         copy_model.change_real_dh(dh_list[i * height: (i+1) * height, :])
         current_dataset = measure_all_distances(copy_model, dataset)
-        _, errors, _, _ = execute_calibration(copy_model, dataset=current_dataset)
+        _, errors, _, _ = step_by_step_base_calibration(copy_model, dataset=current_dataset)
         errors_list += errors
         est_dh_list[i * height: (i+1) * height, :] = copy_model.estimated_dh
         copy_model.reset_estimated_dh()
@@ -423,7 +255,7 @@ def _rate_batch_worker(model: hayati_model.HayatiModel, dataset, i_target, pose_
         copy_model.estimated_dh[target_num][target_i] = copy_model.nominal_dh[target_num][target_i]
         dataset_new = measure_all_distances(copy_model, dataset_new)
         
-        _, new_error, _, _ = execute_calibration(copy_model, dataset=dataset_new)
+        _, new_error, _, _ = step_by_step_base_calibration(copy_model, dataset=dataset_new)
         new_error_value = new_error[i_target]
         new_error_list.append(new_error_value)
             
@@ -709,90 +541,7 @@ def run_global_polish(model: hayati_model.HayatiModel, dataset: np.ndarray, limi
     final_rmse_mm = np.sqrt(np.mean(res.fun**2)) * 1000.0
     #print(f"Полировка завершена успешно! Финальная RMSE на калибровке: {final_rmse_mm:.4f} мм")
 
-
-def execute_wrist_calibration(model: hayati_model.HayatiModel, dataset=[], is_real=0, passes=1, polish=False, replace_base=False):
-    """
-    Выполняет калибровку блока кисти (суставы 4, 5, 6) с сохранением формата 
-    и выводов оригинальной пошаговой функции.
-    
-    :param replace_base: Если True, реальная база (1-3 звенья) временно приравнивается к номинальной.
-    """
-    if len(dataset) == 0:
-        is_real = 1
-        dataset = read_dataset(model.wrist_dataset, ["q1", "q2", "q3", "q4", "q5", "q6", "type", "block_condition_number"]) 
-        dataset[:, 0:6] *= DEG
-        dataset[:, 7] /= 1000
-
-    mask = np.array([val not in EXTRA_POINTS for val in dataset[:, 6]])
-    dataset = dataset[mask]
-
-    calibration_mask = np.zeros(len(dataset), dtype=bool)
-    for i, pose in enumerate(dataset):
-        # Оставляем точки, которые входят в маску, либо специально помечены как кистевые
-        if pose[6] in model.calibration_mask or pose[6] == "WRIST_BLOCK" or pose[6] == "free_4_to_6":
-            calibration_mask[i] = True
-    dataset = dataset[calibration_mask]
-
-    # --- НОВЫЙ ФЛАГ: Временная замена реальной базы на идеальную (номинальную) ---
-    backup_real_dh = None
-    if replace_base and not is_real:
-        backup_real_dh = copy.deepcopy(model.real_dh)
-        for i in range(0, 3): # Индексы 0, 1, 2 соответствуют звеньям 1, 2, 3
-            model.real_dh[i] = copy.deepcopy(model.nominal_dh[i])
-
-    param_errors = np.zeros(len(model.error_list))
-    nom_param_errors = np.zeros(len(model.error_list))
-    est_param_errors = np.zeros(len(model.error_list))
-
-    nom_params = model.get_readable_params("nominal")
-    real_params = model.get_readable_params("real")
-    
-    for _ in range(passes):
-        
-        # Вызываем оптимизацию всего блока сразу (вместо перебора по одному)
-        calibrate_wrist_block(model, dataset)     
-        
-        if not is_real:
-            # Оцениваем ошибки так же, как в твоем коде
-            est_params = model.get_readable_params("estimated")
-            
-            for i in range(len(model.error_list)):
-                param_num, param_letter_num = model.params_from_letters(model.error_list[i])
-                
-                nominal_value = nom_params[param_num][param_letter_num] 
-                real_value = real_params[param_num][param_letter_num]
-                final_value = est_params[param_num][param_letter_num]
-                
-                start_error = nominal_value - real_value  
-                final_error = final_value - real_value  
-
-                if (real_value != 0):         
-                    start_error_rel = start_error/real_value
-                    final_error_rel = final_error/real_value
-                else:
-                    start_error_rel = 100
-                    final_error_rel = 100
-
-                nom_param_errors[i] = start_error
-                est_param_errors[i] = final_error
-                
-                if start_error_rel != 0:
-                    param_errors[i] = (abs(start_error) - abs(final_error))
-                else:
-                    param_errors[i] = 0
-
-    # --- ВОЗВРАТ РЕАЛЬНОЙ БАЗЫ НА МЕСТО ---
-    if backup_real_dh is not None and not is_real:
-        model.real_dh = backup_real_dh
-
-    if not is_real:
-        # Возвращаем заглушку [0, 0] для индексов (так как калибровался весь блок) и массивы ошибок
-        return [0, 0], param_errors, nom_param_errors, est_param_errors
-    else:
-        return True
-
-
-def calibrate_wrist_block(model: hayati_model.HayatiModel, dataset: Union[np.ndarray, list]): 
+def wrist_block_calibration(model: hayati_model.HayatiModel, dataset: Union[np.ndarray, list]): 
     """
     SLSQP оптимизация блока параметров кисти одновременно.
     """
@@ -843,46 +592,53 @@ def calibrate_wrist_block(model: hayati_model.HayatiModel, dataset: Union[np.nda
 
     bounds = Bounds(bounds_min, bounds_max)
 
-    res = minimize(loss_function, x0=x0, method='SLSQP', tol=1e-16, bounds=bounds)
+    def objective_function(x):
+        # 1. Обновляем модель текущими параметрами оптимизатора
+        for i, (p_num, p_let) in enumerate(param_indices):
+            model.estimated_dh[p_num][p_let] = x[i]
+
+        # 2. Пересчитываем нулевую позицию датчика с новыми параметрами
+        zero_pos = model.get_transition_matrix(model.zero_wire_angles, "estimated")[0:3, 3]
+        
+        # 3. Вычисляем невязки для всего датасета
+        residuals = np.zeros(len(dataset))
+        for i, angles in enumerate(dataset[:, 0:6]):
+            d_theor = calculate_estimated_distance(model, angles, zero_pos)
+            residuals[i] = d_theor - real_distances[i]
+            
+        return residuals
+
+    # Левенберг-Марквардт с автоматическим масштабированием (jac)
+    res = least_squares(
+        objective_function, 
+        x0=x0, 
+        method='lm', 
+        x_scale='jac', 
+        ftol=1e-8, 
+        xtol=1e-8,
+        verbose=0
+    )
+
+    #res = minimize(loss_function, x0=x0, method='SLSQP', tol=1e-16, bounds=bounds)
     
     # Окончательно фиксируем найденные значения
     for i, (p_num, p_let) in enumerate(param_indices):
         model.estimated_dh[p_num][p_let] = res.x[i]
-        
     return res
 
-def evaluate_distance_error(model: hayati_model.HayatiModel, dataset: np.ndarray, mode="nominal"):
-    """
-    Вспомогательная функция: вычисляет среднюю абсолютную ошибку предсказания длины троса 
-    для заданного режима (nominal или estimated).
-    """
-    zero_pos = model.get_transition_matrix(model.zero_wire_angles, mode)[0:3, 3]
-    error_sum = 0.0
-    
-    for row in dataset:
-        angles = row[0:6]
-        real_dist = row[7]
-        curr_pos = model.get_transition_matrix(angles, mode)[0:3, 3]
-        calc_dist = sqrt((curr_pos[0] - zero_pos[0])**2 + 
-                         (curr_pos[1] - zero_pos[1])**2 + 
-                         (curr_pos[2] - zero_pos[2])**2)
-        error_sum += abs(calc_dist - real_dist)
-        
-    return error_sum / len(dataset)
-
-def _calibrate_batch_wrist(model: hayati_model.HayatiModel, tries_count: int, generate: bool, passes: int, polish: bool):
+def _calibrate_batch(model: hayati_model.HayatiModel, wrist_dataset: np.ndarray, base_dataset: np.ndarray, 
+                            tries_count: int, generate: bool, passes: int, polish: bool):
     copy_model = copy.deepcopy(model)
-    
-    # Читаем базовый датасет (без реальных измерений, только углы)
-    dataset_base = read_dataset(copy_model.wrist_dataset, ["q1", "q2", "q3", "q4", "q5", "q6", "type", "block_condition_number"])
-    #dataset_base = np.array(dataset_base, dtype=float)
-    dataset_base[:, 0:6] *= DEG
     
     param_count = len(copy_model.error_list)
     local_param_errors = np.zeros(param_count)
     local_nom_param_errors = np.zeros(param_count)
     local_est_param_errors = np.zeros(param_count)
-    
+
+    local_nominal_error = 0
+    local_estimated_error = 0
+    local_estimated_error_prev = 0
+
     total_nominal_error = 0.0
     total_estimated_error = 0.0
     total_estimated_error_prev = 0.0
@@ -891,39 +647,63 @@ def _calibrate_batch_wrist(model: hayati_model.HayatiModel, tries_count: int, ge
         copy_model.reset_estimated_dh()
         
         if generate:
-            # Генерируем новые случайные ошибки сборки
             new_dh = generate_real_dh(copy_model)
             copy_model.change_real_dh(new_dh)
             
-        # Симулируем показания датчика с новыми ошибками
-        dataset_curr = measure_all_distances(copy_model, copy.deepcopy(dataset_base))
+        # Симулируем реальные измерения для ОБОИХ датасетов
+        curr_wrist_dataset = measure_all_distances(copy_model, copy.deepcopy(wrist_dataset))
+        curr_base_dataset = measure_all_distances(copy_model, copy.deepcopy(base_dataset))
         
-        # Оцениваем начальную (номинальную) ошибку троса
-        nom_err = evaluate_distance_error(copy_model, dataset_curr, "nominal")
+        # === ГИБРИДНЫЙ ЦИКЛ КАЛИБРОВКИ (Гаусс-Зейдель) ===
+        for _ in range(passes):
+            # 1. Сначала калибруем кисть (Блок)
+            # Внимание: replace_base=False, так как мы хотим, чтобы алгоритм учился жить с кривой базой!
+            wrist_block_calibration(copy_model, dataset=curr_wrist_dataset)
+            
+            # 2. Затем калибруем базу (Пошагово)
+            # step_by_step_base_calibration(copy_model, dataset=curr_base_dataset, is_real=0) 
+            last_indexes = [0, 0]
+            
+        if polish:
+            run_global_polish(model, np.concatenate([curr_wrist_dataset[:, :8], curr_base_dataset[:, :8]], axis=0), limit_mm=5, limit_deg=5)
         
-        # Запускаем блочную калибровку кисти! 
-        # replace_base=True физически изолирует кисть от перекосов базы в симуляции,
-        # чтобы проверить сходимость исключительно самого блока 4-5-6.
-        _, p_err, nom_p_err, est_p_err = execute_wrist_calibration(
-            copy_model, 
-            dataset=dataset_curr, 
-            is_real=0, 
-            passes=passes, 
-            replace_base=True 
-        )
+        new_nom, new_est, new_esp_prev = check_results(copy_model, last_indexes)
+        local_nominal_error += new_nom
+        local_estimated_error += new_est
+        local_estimated_error_prev += new_esp_prev       
         
-        # Оцениваем итоговую ошибку предсказания длины троса
-        est_err = evaluate_distance_error(copy_model, dataset_curr, "estimated")
+        total_nominal_error += new_nom
+        total_estimated_error += new_est
+        total_estimated_error_prev += new_esp_prev
         
-        total_nominal_error += nom_err
-        total_estimated_error += est_err
-        total_estimated_error_prev += nom_err # Оставлено для совместимости с твоим кодом
+        # Ручной расчет улучшений параметров (чтобы не зависеть от возвратов функций)
+        nom_params = copy_model.get_readable_params("nominal")
+        real_params = copy_model.get_readable_params("real")
+        est_params = copy_model.get_readable_params("estimated")
         
-        local_param_errors += p_err
-        local_nom_param_errors += nom_p_err
-        local_est_param_errors += est_p_err
+        for i in range(param_count):
+            param_num, param_letter_num = copy_model.params_from_letters(copy_model.error_list[i])
+            
+            nominal_value = nom_params[param_num][param_letter_num]
+            real_value = real_params[param_num][param_letter_num]
+            final_value = est_params[param_num][param_letter_num]
+            
+            start_error = nominal_value - real_value
+            final_error = final_value - real_value
 
-    # Усредняем результаты для этого потока (chunk)
+            if real_value != 0:         
+                start_error_rel = start_error / real_value
+                final_error_rel = final_error / real_value
+            else:
+                start_error_rel = 100
+                final_error_rel = 100
+
+            local_nom_param_errors[i] += start_error
+            local_est_param_errors[i] += final_error
+            
+            if start_error_rel != 0:
+                local_param_errors[i] += (abs(start_error) - abs(final_error))
+                
     return (
         total_nominal_error / tries_count,
         total_estimated_error / tries_count,
@@ -933,45 +713,55 @@ def _calibrate_batch_wrist(model: hayati_model.HayatiModel, tries_count: int, ge
         local_est_param_errors / tries_count
     )
 
-def make_many_calibration_attempts_wrist(model: hayati_model.HayatiModel, tries_num: int, generate: bool, passes: int, polish: bool):
-    """
-    Массово запускает симуляцию калибровки и агрегирует результаты для оценки стабильности.
-    """
+def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: int, generate: bool, passes: int, polish: bool, draw: bool = False):
     num_cores = cpu_count()
     chunk_size = max(1, (tries_num // num_cores))
+
+    print("Загрузка датасетов...")
+    # 1. Загружаем датасет для кисти
+    wrist_dataset = read_dataset(model.wrist_dataset, ["q1", "q2", "q3", "q4", "q5", "q6", "type", "block_condition_number"])
+    wrist_dataset = np.array(wrist_dataset, dtype=object)
+    wrist_dataset[:, 0:6] = wrist_dataset[:, 0:6].astype(float) * DEG
+    mask = np.array([val not in EXTRA_POINTS for val in wrist_dataset[:, 6]])
+    wrist_dataset = wrist_dataset[mask]
+    
+    # 2. Загружаем датасет для базы (твой старый калибровочный файл)
+    base_dataset = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
+    base_dataset = np.array(base_dataset, dtype=object)
+    base_dataset[:, 0:6] = base_dataset[:, 0:6].astype(float) * DEG
+    base_dataset = measure_all_distances(model, base_dataset)
+    mask = np.array([val not in EXTRA_POINTS for val in base_dataset[:, 6]])
+    base_dataset = base_dataset[mask]
 
     tasks = []
     for _ in range(min(num_cores, tries_num)):
         if chunk_size > 0:
-            tasks.append((model, chunk_size, generate, passes, polish))        
-
-    print(f"Запуск {tries_num} тестов блочной калибровки кисти на {num_cores} ядрах...")
+            tasks.append((model, wrist_dataset, base_dataset, chunk_size, generate, passes, polish))        
+  
+    print(f"Запуск {tries_num} тестов ГИБРИДНОЙ калибровки на {num_cores} ядрах...")
+    print(f"Используется циклов (passes): {passes}")
     
     with Pool(processes=num_cores) as pool:
-        results = pool.starmap(_calibrate_batch_wrist, tasks)
+        results = pool.starmap(_calibrate_batch, tasks)
 
     # Распаковка результатов
     nominal_error = [x[0] for x in results]
     estimated_error = [x[1] for x in results]
     estimated_error_prev = [x[2] for x in results]
     params_error = np.array([x[3] for x in results])
-    params_nom_error = np.array([x[4] for x in results])
-    params_est_error = np.array([x[5] for x in results])
 
     nominal_error_median = sum(nominal_error) / len(nominal_error)
     estimated_error_median = sum(estimated_error) / len(estimated_error)
     estimated_error_prev_median = sum(estimated_error_prev) / len(estimated_error_prev)
-    
     params_error_median = np.sum(params_error, axis=0) / len(params_error)
-    params_nom_error_median = np.sum(params_nom_error, axis=0) / len(params_error)
-    params_est_error_median = np.sum(params_est_error, axis=0) / len(params_error)
 
-    print("\n--- Результаты предсказания троса ---")
-    print(f"Nominal error:     {nominal_error_median:.6f} мм")
-    print(f"After calibration: {estimated_error_median:.6f} мм")
-    print(f"Difference:        {(nominal_error_median - estimated_error_median):.6f} мм")
-    print(f"Previous diff:     {(nominal_error_median - estimated_error_prev_median):.6f} мм")
-    print(f"Contrib of new:    {(estimated_error_prev_median - estimated_error_median):.6f} мм")
+    print("\n" + "="*50)
+    print(" РЕЗУЛЬТАТЫ ГИБРИДНОЙ КАЛИБРОВКИ (в МИЛЛИМЕТРАХ)")
+    print("="*50)
+    print(f"Nominal error (до калибровки):     {nominal_error_median:.4f} мм")
+    print(f"After calibration (после):         {estimated_error_median:.4f} мм")
+    print(f"Difference (Улучшение троса):      {(nominal_error_median - estimated_error_median):.4f} мм")
+    print("-" * 50)
 
     print("\n--- Улучшение по каждому параметру ---")
     for i, value in enumerate(params_error_median):
@@ -980,12 +770,16 @@ def make_many_calibration_attempts_wrist(model: hayati_model.HayatiModel, tries_
     mask_positive = params_error_median > 0
     mask_negative = params_error_median < 0
 
-    # Защита: np.linalg.norm может упасть, если массив пустой (все ушли в плюс или минус)
     norm_pos = np.linalg.norm(params_error_median[mask_positive]) if np.any(mask_positive) else 0.0
     norm_neg = np.linalg.norm(params_error_median[mask_negative]) if np.any(mask_negative) else 0.0
     
     score = (norm_pos - norm_neg) * 100
-    print(f"\nИтоговый Score (Эффективность): {score:.3f}")
+    print(f"\nИтоговый Score (Эффективность параметров): {score:.3f}")
+
+    if draw:
+        plot_side_by_side_hist(data_before, data_after)
+        plot_dh_comparison(np.abs(params_nom_error_median), np.abs(params_est_error_median))
+        plot_all_6_axes(data[:, 9:15], data[:, 15:])
 
 def main(args):      
     with open(args.config, 'r') as config_file:
@@ -993,7 +787,10 @@ def main(args):
     model = hayati_model.HayatiModel(config)
     if args.mode == "calibration":
         if args.is_real:
-            execute_calibration(model, passes=args.passes, polish=args.polish)
+            dataset = read_dataset(model.calibration_dataset, model.fieldnames_options["wire_samples"]) 
+            dataset[:, 0:6] *= DEG
+            dataset[:, 7] /= 1000
+            step_by_step_base_calibration(model, dataset=dataset)
             write_results(model)
             write_validation_dataset(model, args.is_real)
             write_validation_dataset(model, args.is_real, source_path="results/ARM95/validation_results_calib.csv")
@@ -1002,7 +799,7 @@ def main(args):
             if args.draw:
                 plot_calibration_errors_from_data(data)
         else:
-            make_many_calibration_attempts(model, args.num_of_tries, args.generate, args.draw, passes=args.passes, polish=args.polish)  # ,params_error
+            make_many_calibration_attempts(model, args.num_of_tries, args.generate,  args.passes, args.polish, args.draw)  # ,params_error
             
     elif args.mode == "rate":
         rate_poses_contributions(model, args.target_param, args.num_of_tries, args.floor)

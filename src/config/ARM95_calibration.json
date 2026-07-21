@@ -89,15 +89,8 @@
   "wrist_params": [
     "alpha_6", "a_6", "d_6", "theta_5", "a_5", "alpha_5"
   ], 
-
-  "base_params": [
-    "d_5", "alpha_4", "a_4", "theta_4",
-    "alpha_3", "a_3", "theta_3", "d_4",
-    "beta_3", "alpha_2", "a_2", "theta_2",
-    "beta_2", "alpha_1", "a_1"
-  ],
                   
-  "wire_limits_l_mm": 30,
+  "wire_limits_l_mm": 50,
   "wire_limits_h_mm": 10000,
   "angle_limit_wire_deg": 45,
   "angle_limit_z_deg": 45,
