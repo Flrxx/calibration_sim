@@ -78,8 +78,7 @@
     "d_1", "theta_1"],
 
   "calibration_mask":     [
-    "alpha_6", 
-    "a_6", "theta_6", "d_6", "theta_5", "a_5", "alpha_5",  
+    "a_6", "d_6", "theta_5", "a_5", "alpha_5",  
     "d_5", "alpha_4", "a_4", "theta_4",
     "alpha_3", "a_3", "theta_3", "d_4",
     "beta_3", "alpha_2", "a_2", "theta_2",
@@ -89,7 +88,7 @@
   "wrist_params": [
   ], 
                   
-  "wire_limits_l_mm": 50,
+  "wire_limits_l_mm": 80,
   "wire_limits_h_mm": 10000,
   "angle_limit_wire_deg": 45,
   "angle_limit_z_deg": 45,
@@ -113,17 +112,11 @@
           "then_joint": 5,
           "then_forbidden_range_deg": [[-180, -110], [-70, 70], [110, 180]]
       },
-            {
-          "if_joint": 4,                
-          "if_range_deg": [130, 180],
-          "then_joint": 6,
-          "then_forbidden_range_deg": [[-180, -30]]
-      },
       {
           "if_joint": 4,                
           "if_range_deg": [130, 180],
           "then_joint": 6,
-          "then_forbidden_range_deg": [[30, 180]]
+          "then_forbidden_range_deg": [[-180, -30], [30, 180]]
       },
       {
           "if_joint": 3,

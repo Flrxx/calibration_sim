@@ -385,7 +385,7 @@ def rate_poses_contributions(model, target_param, num_tries, floor, passes, poli
     
     write_dataset(
         target_poses.tolist() if hasattr(target_poses, 'tolist') else target_poses, 
-        "datasets/ARM95/wire/positive_contributions.csv", 
+        "datasets/ARM95/wire/generation/positive_contributions.csv", 
         model.fieldnames_options["wire_contributions"], 
         tolerance=3
     )
