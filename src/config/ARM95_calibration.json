@@ -87,7 +87,6 @@
   ], 
 
   "wrist_params": [
-    "alpha_6", "a_6", "d_6", "theta_5", "a_5", "alpha_5"
   ], 
                   
   "wire_limits_l_mm": 50,

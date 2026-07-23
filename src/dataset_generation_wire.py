@@ -4,7 +4,7 @@ import json
 import os
 import numpy as np
 from math import sqrt, acos
-from random import uniform, random, sample
+from random import uniform, random, sample, gauss
 from math_routines import extract_zyx_euler
 import hayati_model
 from typing import Union
@@ -401,6 +401,9 @@ def measure_real_distance(model, angles: Union[list, np.ndarray]):
         
     # 2. Применяем зафиксированную систематическую (линейную) ошибку
     distance *= 1 + model.encoder_linear_scale 
+
+    # Gauss
+    distance += gauss(0, 0.1 / 1000.0)
     
     # 3. Применяем разрешение энкодера (ступенчатость)
     if model.encoder_resolution != 0:
@@ -638,9 +641,6 @@ def export_validation_csv(model: hayati_model.HayatiModel, poses: list, output_f
     print(f"Валидационный датасет успешно сохранен в: {output_filepath}")
 
 def is_pose_safe(model: hayati_model.HayatiModel, angles: np.ndarray) -> bool:
-    """
-    Проверка на аппаратную безопасность: защита от 'Зоны смерти' и лимитов троса.
-    """
     if hasattr(model, 'violates_dynamic_limits') and model.violates_dynamic_limits(angles):
         return False
 
@@ -648,24 +648,33 @@ def is_pose_safe(model: hayati_model.HayatiModel, angles: np.ndarray) -> bool:
     wire = matrix[0:3, 3] - model.zero_offset_nominal
     wire_len = np.linalg.norm(wire) 
     
-    if wire_len < model.wire_limits[0] or wire_len > model.wire_limits[1]:
+    if wire_len < 1e-6 or wire_len < model.wire_limits[0] or wire_len > model.wire_limits[1]:
         return False
 
+    z_dir = matrix[0:3, 2]
     wire_norm = wire / wire_len
-    scalar_wire_forward = np.vdot(wire_norm, model.zero_wire_direction)
-    if scalar_wire_forward <= 0:
+
+    # 1. z limits (z_dir vs -zero_wire_direction)
+    scalar_z = np.vdot(z_dir, -model.zero_wire_direction)
+    if scalar_z < 0: 
         return False
-        
-    alpha_deg = acos(np.clip(scalar_wire_forward, -1.0, 1.0)) / DEG
-    
-    wire_len_mm = wire_len * 1000.0
-    if wire_len_mm < 150.0 and alpha_deg > 45.0:
-        return False # Коротко и криво -> Аппаратный шум датчика
-        
-    limit_wire_deg = model.angle_limit_wire if model.angle_limit_wire > 3.15 else model.angle_limit_wire / DEG
-    if alpha_deg > limit_wire_deg: 
+    if acos(np.clip(scalar_z, -1.0, 1.0)) > model.angle_limit_z: 
         return False
-        
+
+    # 2. wire limits (z_dir vs -wire_norm)
+    scalar_wire = np.vdot(-wire_norm, z_dir)
+    if scalar_wire < 0: 
+        return False
+    if acos(np.clip(scalar_wire, -1.0, 1.0)) > model.angle_limit_z: 
+        return False
+
+    # 3. wire limits (wire_norm vs zero_wire_direction)
+    scalar = np.vdot(wire_norm, model.zero_wire_direction)
+    if scalar < 0: 
+        return False
+    if acos(np.clip(scalar, -1.0, 1.0)) > model.angle_limit_wire: 
+        return False
+
     return True
 
 def calculate_group_jacobian(model: hayati_model.HayatiModel, angles: np.ndarray, target_params: list):

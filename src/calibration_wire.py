@@ -25,24 +25,29 @@ import itertools
 
 EXTRA_POINTS = ["LINEAR", "JOINT", "JOINT_CONTINUE", "END"]    # -2, -1, -3
 
-def step_by_step_base_calibration(model: hayati_model.HayatiModel, dataset=[], is_real=0):
+def step_by_step_base_calibration(model: hayati_model.HayatiModel, dataset=[], is_real=0, passes=1, polish=False):
     calibration_mask = np.zeros(len(dataset), dtype=bool)
     for i, pose in enumerate(dataset):
         if pose[6] in model.calibration_mask:
             calibration_mask[i] = True
-    dataset = dataset[calibration_mask]
+    filtered_dataset = dataset[calibration_mask]
     
-    for i in range (len(model.base_params)):
-        single_param_dataset = dataset[dataset[:, 6] == model.base_params[i]]
+    for _ in range(passes):
+        for i in range (len(model.base_params)):
+            single_param_dataset = filtered_dataset[filtered_dataset[:, 6] == model.base_params[i]]
 
-        param_num, param_letter_num = model.params_from_letters(model.base_params[i])
-        if(len(single_param_dataset) == 0):
-            continue        
+            param_num, param_letter_num = model.params_from_letters(model.base_params[i])
+            if(len(single_param_dataset) == 0):
+                continue        
 
-        optimizing_param = calibrate_single_param(model, single_param_dataset)     
-        
-        final_value = optimizing_param.x[0]
-        model.estimated_dh[param_num][param_letter_num] = final_value 
+            optimizing_param = calibrate_single_param(model, single_param_dataset)     
+            
+            final_value = optimizing_param.x[0]
+            model.estimated_dh[param_num][param_letter_num] = final_value 
+
+    # Глобальная полировка перенесена сюда
+    if polish:
+        run_global_polish(model, filtered_dataset[:, :8], limit_mm=5, limit_deg=5)
 
     return True
 
@@ -220,140 +225,166 @@ def write_validation_dataset(model: hayati_model.HayatiModel, is_real=False, sou
     output_dataset[:, :6] /= DEG
     output_dataset[:, 6:] *= 1000
 
-
     write_dataset(output_dataset, source_path, model.fieldnames_options["test_result"], tolerance = 3)
     #print("Done")
 
-def _calibrate_list_of_dh(model: hayati_model.HayatiModel, i_target, dataset, dh_list):
+def _calibrate_list_of_dh(model, i_target, dataset, dh_list, passes, polish):
     copy_model = copy.deepcopy(model)
-    height =  copy_model.estimated_dh.shape[0]
+    height = copy_model.estimated_dh.shape[0]
 
-    est_dh_list = np.zeros(shape=(dh_list.shape))
+    est_dh_list = np.zeros(shape=dh_list.shape)
     errors_list = np.zeros(len(copy_model.error_list))
-    for i in range(int(len(dh_list)/height)):
+    
+    num_iters = int(len(dh_list) / height)
+    for i in range(num_iters):
         copy_model.change_real_dh(dh_list[i * height: (i+1) * height, :])
-        current_dataset = measure_all_distances(copy_model, dataset)
-        _, errors, _, _ = step_by_step_base_calibration(copy_model, dataset=current_dataset)
+        current_dataset = measure_all_distances(copy_model, copy.deepcopy(dataset))
+        
+        step_by_step_base_calibration(copy_model, dataset=current_dataset, passes=passes, polish=polish)
+        
+        errors = np.zeros(len(copy_model.error_list))
+        est_params = np.array(copy_model.get_readable_params("estimated"))
+        real_params = np.array(copy_model.get_readable_params("real"))
+        nominal_params = np.array(copy_model.get_readable_params("nominal"))
+        
+        for j, param_name in enumerate(copy_model.error_list):
+            p_num, p_let = copy_model.params_from_letters(param_name)
+            final_error = est_params[p_num][p_let] - real_params[p_num][p_let]
+            start_error = nominal_params[p_num][p_let] - real_params[p_num][p_let]
+            errors[j] = abs(start_error) - abs(final_error)
+        
         errors_list += errors
         est_dh_list[i * height: (i+1) * height, :] = copy_model.estimated_dh
         copy_model.reset_estimated_dh()
 
-    return est_dh_list, errors_list/(len(dh_list)/height)
+    return est_dh_list, errors_list / num_iters
 
-def _rate_batch_worker(model: hayati_model.HayatiModel, dataset, i_target, pose_num, num_tries_in_batch, dh_array, est_dh_array):
+
+def _rate_batch_worker(model, dataset_eval, i_target, num_tries_in_batch, dh_array, est_dh_array, passes, polish):
     copy_model = copy.deepcopy(model)
     new_error_list = []
-    height =  copy_model.estimated_dh.shape[0]
-    target_num, target_i = copy_model.params_from_letters(copy_model.error_list[i_target])
-
-    dataset_new = np.delete(dataset, pose_num, axis=0)
+    height = copy_model.estimated_dh.shape[0]
+    
+    p_num, p_let = copy_model.params_from_letters(copy_model.error_list[i_target])
+    
     for i in range(num_tries_in_batch):
-        if i == num_tries_in_batch - 1:
-            pass
         copy_model.change_real_dh(dh_array[i * height: (i+1) * height, :])
         copy_model.estimated_dh = est_dh_array[i * height: (i+1) * height, :]
-        copy_model.estimated_dh[target_num][target_i] = copy_model.nominal_dh[target_num][target_i]
-        dataset_new = measure_all_distances(copy_model, dataset_new)
+        copy_model.estimated_dh[p_num][p_let] = copy_model.nominal_dh[p_num][p_let]
         
-        _, new_error, _, _ = step_by_step_base_calibration(copy_model, dataset=dataset_new)
-        new_error_value = new_error[i_target]
-        new_error_list.append(new_error_value)
+        dataset_curr = measure_all_distances(copy_model, copy.deepcopy(dataset_eval))
+        
+        step_by_step_base_calibration(copy_model, dataset=dataset_curr, passes=passes, polish=polish)
+        
+        est_params = np.array(copy_model.get_readable_params("estimated"))
+        real_params = np.array(copy_model.get_readable_params("real"))
+        nominal_params = np.array(copy_model.get_readable_params("nominal"))
+
+        final_error = est_params[p_num][p_let] - real_params[p_num][p_let]
+        start_error = nominal_params[p_num][p_let] - real_params[p_num][p_let]
+        
+        new_error_list.append(abs(start_error) - abs(final_error))
             
     return new_error_list
 
-def rate_poses_contributions(model: hayati_model.HayatiModel, target_param, num_tries, floor):
+
+def rate_poses_contributions(model, target_param, num_tries, floor, passes, polish):
     dataset_orig = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
     dataset_orig[:, 0:6] *= DEG
-    #positive_mask = dataset_orig[:, 6] >= 0
-    mask = np.array([isinstance(val, str) for val in dataset_orig[:, 6]])
+    
+    mask = np.array([val not in EXTRA_POINTS for val in dataset_orig[:, 6]])
     dataset_orig = dataset_orig[mask]
 
-    poses_mask = dataset_orig[:, 6] == target_param
     i_target = model.error_list.index(target_param)
-    target_poses = dataset_orig[poses_mask]
-    print(f"Starting analysis of {len(target_poses)} poses across {num_tries} tries...")
-    dataset = measure_all_distances(model, dataset_orig)
+    valid_params = model.error_list[:i_target + 1]
+    time_mask = np.array([val in valid_params for val in dataset_orig[:, 6]])
+    dataset_orig = dataset_orig[time_mask]
+
+    target_mask = dataset_orig[:, 6] == target_param
+    target_poses = dataset_orig[target_mask]
+    other_poses = dataset_orig[~target_mask]
     
-    zero_index = np.where(poses_mask)[0][0]
     num_cores = cpu_count()
     chunk_size = num_tries // num_cores
     remainder = num_tries % num_cores
     
-    # Open the Pool ONCE outside the loop
     is_changed = 1
     loop_completed = 1
+    
+    print(f"Starting analysis of {len(target_poses)} poses across {num_tries} tries...")
+
     while is_changed == 1:
-        
-        if loop_completed: # gen new DH
+        if loop_completed: 
             is_changed = 0
-            print("Generating new DH")
-            height =  model.estimated_dh.shape[0]
+            height = model.estimated_dh.shape[0]
+            
             dh_array = np.zeros(shape=(num_tries * height, model.estimated_dh.shape[1]))
             for i in range(num_tries):
                 dh_array[i * height: (i+1) * height, :] = generate_real_dh(model)
-            est_dh_array = np.zeros(shape=(num_tries * model.estimated_dh.shape[0], model.estimated_dh.shape[1]))
+                
+            dataset_full = np.vstack([target_poses, other_poses]) if len(target_poses) > 0 else other_poses
+            dataset_full_measured = measure_all_distances(model, copy.deepcopy(dataset_full))
+
             tasks = []
+            start_idx = 0
             for i in range(num_cores):
                 current_batch_size = chunk_size + (1 if i < remainder else 0)
                 if current_batch_size > 0:
-                    tasks.append((model, i_target, dataset,
-                                    dh_array[i * current_batch_size * height: (i+1) * current_batch_size * height,:]))    
-            results = []
+                    end_idx = start_idx + current_batch_size
+                    tasks.append((model, i_target, dataset_full_measured,
+                                  dh_array[start_idx * height : end_idx * height, :], passes, polish))
+                    start_idx = end_idx
+                    
             with Pool(processes=num_cores) as pool1:
                 results = pool1.starmap(_calibrate_list_of_dh, tasks)
 
             est_dh_array = np.concatenate([x[0] for x in results], axis=0)
             initial_errors_res = np.stack([x[1] for x in results])
-            initial_errors_list = np.mean(initial_errors_res , axis=0)
+            initial_errors_list = np.mean(initial_errors_res, axis=0)
             
-            initial_error = initial_errors_list[i_target]
+            initial_error = initial_errors_list[i_target] if len(target_poses) > 0 else 0.0
             print(f"Initial error {initial_error:.3f}")
 
-        
         with Pool(processes=num_cores) as pool:
             loop_completed = 0
             for pose_num in range(len(target_poses) - 1, -1, -1):
-                tasks = [] # Reset tasks for the current pose
-                
-                i = 0
+                temp_target = np.delete(target_poses, pose_num, axis=0)
+                dataset_eval = np.vstack([temp_target, other_poses]) if len(temp_target) > 0 else other_poses
+                dataset_eval_measured = measure_all_distances(model, copy.deepcopy(dataset_eval))
+
+                tasks = []
+                start_idx = 0
                 for i in range(num_cores):
                     current_batch_size = chunk_size + (1 if i < remainder else 0)
                     if current_batch_size > 0:
-                        tasks.append((model, target_poses, i_target, pose_num, current_batch_size,
-                                        dh_array[i * current_batch_size * height: (i+1) * current_batch_size * height,:],
-                                        est_dh_array[i * current_batch_size * height: (i+1) * current_batch_size * height,:]))
+                        end_idx = start_idx + current_batch_size
+                        tasks.append((model, dataset_eval_measured, i_target, current_batch_size,
+                                      dh_array[start_idx * height : end_idx * height, :],
+                                      est_dh_array[start_idx * height : end_idx * height, :], passes, polish))
+                        start_idx = end_idx
 
                 results = pool.starmap(_rate_batch_worker, tasks)
-                
-                new_error_vector = np.concatenate([x for x in results])
+                new_error_vector = np.concatenate(results)
                 new_median = np.mean(new_error_vector) 
+
                 print(f"New value {new_median:.3f}")
-
-                error_median = new_median - initial_error
-                # print(target_poses[pose_num])
-                # print(dataset[zero_index + pose_num])
-
-
-                if error_median > floor:
-                    dataset = np.delete(dataset, zero_index + pose_num, axis=0)
-                    target_poses = np.delete(target_poses, pose_num, axis=0)
-                    print(f"Deleted pose index {pose_num}")
+                
+                if (new_median - initial_error) > floor:
+                    target_poses = temp_target
                     is_changed = 1
                     initial_error = new_median
-                    #break
+                    print(f"Deleted pose index {pose_num}")
                 else:
                     print(f"Saved pose index {pose_num}")
-            else:   
+            else:
                 loop_completed = 1
-                print("Loop completed")
             
     target_poses[:, 0:6] /= DEG
-    
     print(f"Found {len(target_poses)} poses with positive contribution")
     print(f"Final error {initial_error:.3f}")
     
     write_dataset(
-        target_poses, 
+        target_poses.tolist() if hasattr(target_poses, 'tolist') else target_poses, 
         "datasets/ARM95/wire/positive_contributions.csv", 
         model.fieldnames_options["wire_contributions"], 
         tolerance=3
@@ -626,7 +657,7 @@ def wrist_block_calibration(model: hayati_model.HayatiModel, dataset: Union[np.n
         model.estimated_dh[p_num][p_let] = res.x[i]
     return res
 
-def _calibrate_batch(model: hayati_model.HayatiModel, wrist_dataset: np.ndarray, base_dataset: np.ndarray, 
+def _calibrate_batch(model: hayati_model.HayatiModel, base_dataset: np.ndarray, 
                             tries_count: int, generate: bool, passes: int, polish: bool):
     copy_model = copy.deepcopy(model)
     
@@ -650,22 +681,12 @@ def _calibrate_batch(model: hayati_model.HayatiModel, wrist_dataset: np.ndarray,
             new_dh = generate_real_dh(copy_model)
             copy_model.change_real_dh(new_dh)
             
-        # Симулируем реальные измерения для ОБОИХ датасетов
-        curr_wrist_dataset = measure_all_distances(copy_model, copy.deepcopy(wrist_dataset))
         curr_base_dataset = measure_all_distances(copy_model, copy.deepcopy(base_dataset))
         
-        # === ГИБРИДНЫЙ ЦИКЛ КАЛИБРОВКИ (Гаусс-Зейдель) ===
-        for _ in range(passes):
-            # 1. Сначала калибруем кисть (Блок)
-            # Внимание: replace_base=False, так как мы хотим, чтобы алгоритм учился жить с кривой базой!
-            wrist_block_calibration(copy_model, dataset=curr_wrist_dataset)
-            
-            # 2. Затем калибруем базу (Пошагово)
-            # step_by_step_base_calibration(copy_model, dataset=curr_base_dataset, is_real=0) 
-            last_indexes = [0, 0]
-            
-        if polish:
-            run_global_polish(model, np.concatenate([curr_wrist_dataset[:, :8], curr_base_dataset[:, :8]], axis=0), limit_mm=5, limit_deg=5)
+        # === УНИФИЦИРОВАННЫЙ ВЫЗОВ ===
+        # Вся логика passes и polish теперь спрятана внутри функции, как и в других местах
+        step_by_step_base_calibration(copy_model, dataset=curr_base_dataset, is_real=0, passes=passes, polish=polish) 
+        last_indexes = [0, 0]
         
         new_nom, new_est, new_esp_prev = check_results(copy_model, last_indexes)
         local_nominal_error += new_nom
@@ -676,7 +697,6 @@ def _calibrate_batch(model: hayati_model.HayatiModel, wrist_dataset: np.ndarray,
         total_estimated_error += new_est
         total_estimated_error_prev += new_esp_prev
         
-        # Ручной расчет улучшений параметров (чтобы не зависеть от возвратов функций)
         nom_params = copy_model.get_readable_params("nominal")
         real_params = copy_model.get_readable_params("real")
         est_params = copy_model.get_readable_params("estimated")
@@ -719,26 +739,29 @@ def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: i
 
     print("Загрузка датасетов...")
     # 1. Загружаем датасет для кисти
-    wrist_dataset = read_dataset(model.wrist_dataset, ["q1", "q2", "q3", "q4", "q5", "q6", "type", "block_condition_number"])
-    wrist_dataset = np.array(wrist_dataset, dtype=object)
-    wrist_dataset[:, 0:6] = wrist_dataset[:, 0:6].astype(float) * DEG
-    mask = np.array([val not in EXTRA_POINTS for val in wrist_dataset[:, 6]])
-    wrist_dataset = wrist_dataset[mask]
-    
-    # 2. Загружаем датасет для базы (твой старый калибровочный файл)
-    base_dataset = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
-    base_dataset = np.array(base_dataset, dtype=object)
-    base_dataset[:, 0:6] = base_dataset[:, 0:6].astype(float) * DEG
-    base_dataset = measure_all_distances(model, base_dataset)
-    mask = np.array([val not in EXTRA_POINTS for val in base_dataset[:, 6]])
-    base_dataset = base_dataset[mask]
+    # wrist_dataset = read_dataset(model.wrist_dataset, ["q1", "q2", "q3", "q4", "q5", "q6", "type", "block_condition_number"])
+    # wrist_dataset = np.array(wrist_dataset, dtype=object)
+    # wrist_dataset[:, 0:6] = wrist_dataset[:, 0:6].astype(float) * DEG
+    # mask = np.array([val not in EXTRA_POINTS for val in wrist_dataset[:, 6]])
+    # wrist_dataset = wrist_dataset[mask])
+    full_dataset = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
+    full_dataset = np.array(full_dataset, dtype=object)
+    full_dataset[:, 0:6] = full_dataset[:, 0:6].astype(float) * DEG
+    full_dataset = measure_all_distances(model, full_dataset)
+    mask = np.array([val not in EXTRA_POINTS for val in full_dataset[:, 6]])
+    full_dataset = full_dataset[mask]
+
+    wrist_mask = np.array([True if elem[6] == "WRIST_BLOCK" else False for elem in full_dataset])
+    #wrist_dataset = full_dataset[wrist_mask]
+
+    base_mask = np.array([not elem for elem in wrist_mask])
+    base_dataset = full_dataset[base_mask]
 
     tasks = []
     for _ in range(min(num_cores, tries_num)):
         if chunk_size > 0:
-            tasks.append((model, wrist_dataset, base_dataset, chunk_size, generate, passes, polish))        
+            tasks.append((model, base_dataset, chunk_size, generate, passes, polish)) #wrist_dataset   
   
-    print(f"Запуск {tries_num} тестов ГИБРИДНОЙ калибровки на {num_cores} ядрах...")
     print(f"Используется циклов (passes): {passes}")
     
     with Pool(processes=num_cores) as pool:
@@ -802,12 +825,10 @@ def main(args):
             make_many_calibration_attempts(model, args.num_of_tries, args.generate,  args.passes, args.polish, args.draw)  # ,params_error
             
     elif args.mode == "rate":
-        rate_poses_contributions(model, args.target_param, args.num_of_tries, args.floor)
+        rate_poses_contributions(model, args.target_param, args.num_of_tries, args.floor, args.passes, args.polish)
     elif args.mode == "cluster":
         cluster_and_visualize_poses(model, args.target_param, n_clusters=args.num_of_tries)
-    elif args.mode == "wrist":
-        make_many_calibration_attempts_wrist(model, args.num_of_tries, args.generate, passes=args.passes, polish=args.polish)
-    
+
     elif args.mode == "test":
         validation_data = read_dataset("results/ARM95/validation_results.csv", ['q1','q2','q3','q4','q5','q6','d_nom','d_est','d_encoder','diff'])
         calibration_data = read_dataset("datasets/ARM95/wire/calibration_dataset_full_29.05.csv", ['q1','q2','q3','q4','q5','q6','index','d'])
