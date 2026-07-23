@@ -1,45 +1,21 @@
-Рабочие параметры:
-["theta_6", "d_6", "theta_5", "theta_4", "a_3", "d_4", "a_2", "theta_3", "theta_2", "a_1"]
-
-"zero_wire_angles":[
-    0.0,
-    36.1,
-    96.8,
-    -90.0,
-    90.0,
-    0.0
-]
-
-"nominal_tool_params": [
-    0,
-    0.03,  
-    0.05,
-    0,
-    0,
-    0
-  ]
-
-
-
-
-Новые:
-["a_6","alpha_6", "theta_6", "a_5", "alpha_5", "d_6", "d_5", "theta_5", "a_4", "alpha_4", "d_4", "theta_4", 
-                "a_3", "alpha_3", "beta_3", "theta_3", "a_2", "alpha_2", "beta_2", "theta_2", "a_1", "alpha_1", "d_1", "theta_1"]
-
-"zero_wire_angles":[
-    14.95,
-    23.83,
-    139.02,
-    -72.84,
-    90.00,
-    -14.95
-  ]
-
-"nominal_tool_params": [
-    0,
-    0.06454,  
-    0.0335,
-    0,
-    0,
-    0
-  ]
+{
+    "conditions": [
+      { "joint": 2, "range_deg": [0, 35] }
+    ],
+    "then_joint": 3,
+    "then_forbidden_range_deg": [[-180, -40], [160, 180]]
+  },
+  {
+    "conditions": [
+      { "joint": 2, "range_deg": [-90, -70] }
+    ],
+    "then_joint": 3,
+    "then_forbidden_range_deg": [[-180, -160], [130, 180]]
+  },
+  {
+    "conditions": [
+      { "joint": 2, "range_deg": [35, 45] }
+    ],
+    "then_joint": 3,
+    "then_forbidden_range_deg": [[-160, -140], [0, 160]]
+  }

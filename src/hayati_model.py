@@ -251,17 +251,30 @@ class HayatiModel:
     def violates_dynamic_limits(self, q):
         """Проверяет готовую позу на нарушение правил коллизий (Запретные зоны)"""
         for rule in self.dynamic_constrains_deg:
-            cond_j = rule["if_joint"] - 1
-            target_j = rule["then_joint"] - 1
+            conditions_met = True
+            
+            # 1. Проверяем новые сложные условия (массив conditions)
+            for cond in rule.get("conditions", []):
+                cond_j = cond["joint"] - 1
+                cond_min = cond["range_deg"][0] * DEG
+                cond_max = cond["range_deg"][1] * DEG
+                if not (cond_min <= q[cond_j] <= cond_max):
+                    conditions_met = False
+                    break # Одно условие не выполнилось - правило неактивно
+            
+            # 2. Обратная совместимость для старых одиночных условий
+            if conditions_met and "if_joint" in rule:
+                cond_j = rule["if_joint"] - 1
+                cond_min = rule["if_range_deg"][0] * DEG
+                cond_max = rule["if_range_deg"][1] * DEG
+                if not (cond_min <= q[cond_j] <= cond_max):
+                    conditions_met = False
 
-            cond_min = rule["if_range_deg"][0] * DEG
-            cond_max = rule["if_range_deg"][1] * DEG
-
-            # Если сустав-условие попал в триггерную зону
-            if cond_min <= q[cond_j] <= cond_max:
-                
-                # Проверяем все запретные зоны
+            # Если ВСЕ условия триггера совпали
+            if conditions_met:
+                target_j = rule["then_joint"] - 1
                 forbidden_rules = rule["then_forbidden_range_deg"]
+                
                 for sub_rule in forbidden_rules: 
                     forbidden_min = sub_rule[0] * DEG
                     forbidden_max = sub_rule[1] * DEG
@@ -283,13 +296,27 @@ class HayatiModel:
         
         for rule in self.dynamic_constrains_deg:
             if rule["then_joint"] - 1 == target_joint_idx:
-                cond_j = rule["if_joint"] - 1
-                cond_min = rule["if_range_deg"][0] * DEG
-                cond_max = rule["if_range_deg"][1] * DEG
+                conditions_met = True
+                
+                # 1. Проверяем новые сложные условия
+                for cond in rule.get("conditions", []):
+                    cond_j = cond["joint"] - 1
+                    cond_min = cond["range_deg"][0] * DEG
+                    cond_max = cond["range_deg"][1] * DEG
+                    if not (cond_min <= q_current[cond_j] <= cond_max):
+                        conditions_met = False
+                        break
+                        
+                # 2. Обратная совместимость
+                if conditions_met and "if_joint" in rule:
+                    cond_j = rule["if_joint"] - 1
+                    cond_min = rule["if_range_deg"][0] * DEG
+                    cond_max = rule["if_range_deg"][1] * DEG
+                    if not (cond_min <= q_current[cond_j] <= cond_max):
+                        conditions_met = False
 
-                # Если сустав-условие попал в триггерную зону
-                if cond_min <= q_current[cond_j] <= cond_max:
-                    
+                # Если ВСЕ условия совпали - применяем "вырезание" зон
+                if conditions_met:
                     forbidden_sub_ranges = []
                     for sub_rule in rule["then_forbidden_range_deg"]:
                         forbidden_sub_ranges.append((sub_rule[0] * DEG, sub_rule[1] * DEG))
