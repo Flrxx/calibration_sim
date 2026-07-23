@@ -78,7 +78,8 @@
     "d_1", "theta_1"],
 
   "calibration_mask":     [
-    "a_6", "d_6", "theta_5", "a_5", "alpha_5",  
+    "alpha_6", 
+    "a_6", "theta_6", "d_6", "theta_5", "a_5", "alpha_5",  
     "d_5", "alpha_4", "a_4", "theta_4",
     "alpha_3", "a_3", "theta_3", "d_4",
     "beta_3", "alpha_2", "a_2", "theta_2",
@@ -127,7 +128,14 @@
     ],
     "then_joint": 4,
     "then_forbidden_range_deg": [[-180, -160], [160, 180]]
-  }  
+  },
+  {
+    "conditions": [
+      { "joint": 2, "range_deg": [0, 35] }
+    ],
+    "then_joint": 3,
+    "then_forbidden_range_deg": [[-180, -40], [160, 180]]
+  }
   ],
 
   "distance_delta_mm": 1.0,

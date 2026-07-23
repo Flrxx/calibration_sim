@@ -141,8 +141,8 @@ def calculate_optimal_position(model, numerical_target_index: int, angles_start:
         scalar_wire = np.vdot(wire / np.linalg.norm(wire), model.zero_wire_direction)
         alpha_deg = acos(np.clip(scalar_wire, -1.0, 1.0)) / DEG
         
-        if wire_len_mm < 150.0 and alpha_deg > 45.0:
-            return 1e6 # Жесткий штраф 
+        # if wire_len_mm < 150.0 and alpha_deg > 45.0:
+        #     return 1e6 # Жесткий штраф 
 
         # 3. Расчет SNR (Твоя формула)
         snr = (abs(output[numerical_target_index]) / 
@@ -152,37 +152,31 @@ def calculate_optimal_position(model, numerical_target_index: int, angles_start:
         return -snr
 
     def wire_limits(angles):
-        """
-        SLSQP ожидает, что все значения массива constraints будут >= 0 для валидной позы.
-        """
+    #     return model.is_pose_valid(angles)    
+        #z limits
         matrix = model.get_transition_matrix(angles, "nominal")
         z_dir = matrix[0:3, 2]
+        scalar_z = np.vdot(z_dir, -model.zero_wire_direction)
+        
+        #np.clip(scalar_z, -1.0, 1.0)
+        #alpha_z = acos(scalar_z)
+        #angle_cons_z = np.array([alpha_z, model.angle_limit_z - alpha_z]) # so angle would fit
+
         wire = matrix[0:3, 3] - model.zero_offset_nominal
         wire_len = np.linalg.norm(wire) 
+        scalar_wire = np.vdot(-(wire / wire_len), z_dir)
+        np.clip(scalar_wire, -1, 1)
+        alpha_z = acos(scalar_wire)
+        angle_cons_z = np.array([alpha_z, model.angle_limit_z - alpha_z]) # so angle would fit
         
-        if wire_len < 1e-6:
-            return np.array([-1.0]) # Fail-safe для предотвращения деления на ноль
-            
-        wire_norm = wire / wire_len
-        
-        # 1. Лимит угла ФЛАНЦА (Адаптивный, передан в функцию)
-        scalar_z = np.vdot(-wire_norm, z_dir)
-        scalar_z = np.clip(scalar_z, -1.0, 1.0) # ИСПРАВЛЕН БАГ: переприсваивание
-        alpha_z = acos(scalar_z)
-        angle_cons_z = (limit_flange_deg * DEG) - alpha_z # Должно быть >= 0
-        
-        # 2. ГЛОБАЛЬНЫЙ лимит угла ДАТЧИКА (Защита корпуса 75 градусов)
-        scalar_wire = np.vdot(wire_norm, model.zero_wire_direction)
-        scalar_wire = np.clip(scalar_wire, -1.0, 1.0) # ИСПРАВЛЕН БАГ
-        alpha_wire = acos(scalar_wire)
-        angle_cons_wire = (75.0 * DEG) - alpha_wire # Должно быть >= 0
-        
-        # 3. Лимиты длины троса
-        len_min_cons = wire_len - model.wire_limits[0] # Должно быть >= 0
-        len_max_cons = model.wire_limits[1] - wire_len # Должно быть >= 0
+        # wire limits        
+        len_cons = np.array([wire_len - model.wire_limits[0], model.wire_limits[1] - wire_len]) # so wire len would fit
 
-        # Возвращаем плоский массив со всеми условиями
-        return np.array([angle_cons_z, angle_cons_wire, len_min_cons, len_max_cons])
+        scalar_wire = np.vdot(wire / wire_len, model.zero_wire_direction)  # > 0 so wire stretch forward        
+        alpha = acos(scalar_wire)
+        angle_cons_wire = np.array([alpha, model.angle_limit_wire - alpha]) # so angle would fit
+
+        return np.concatenate(([scalar_z], [scalar_wire], angle_cons_z,  [scalar_wire], angle_cons_wire, len_cons)) #angle_cons_wire,
 
     # Оформляем ограничения для scipy
     cons = [{'type': 'ineq', 'fun': wire_limits}]

@@ -1,10 +1,4 @@
-{
-    "conditions": [
-      { "joint": 2, "range_deg": [0, 35] }
-    ],
-    "then_joint": 3,
-    "then_forbidden_range_deg": [[-180, -40], [160, 180]]
-  },
+
   {
     "conditions": [
       { "joint": 2, "range_deg": [-90, -70] }
@@ -19,3 +13,200 @@
     "then_joint": 3,
     "then_forbidden_range_deg": [[-160, -140], [0, 160]]
   }
+
+  python3 src/calibration_wire.py -m="rate" -n=1000 -t="theta_4" -f=0.001
+Starting analysis of 18 poses across 1000 tries...
+Initial error -0.043
+New value 0.077
+Deleted pose index 17
+New value 0.078
+Deleted pose index 16
+New value 0.080
+Deleted pose index 15
+New value 0.080
+Saved pose index 14
+New value 0.077
+Saved pose index 13
+New value 0.079
+Saved pose index 12
+New value 0.080
+Saved pose index 11
+New value 0.080
+Saved pose index 10
+New value 0.081
+Saved pose index 9
+New value 0.080
+Saved pose index 8
+New value 0.081
+Deleted pose index 7
+New value 0.081
+Saved pose index 6
+New value 0.081
+Saved pose index 5
+New value 0.081
+Saved pose index 4
+New value 0.081
+Saved pose index 3
+New value 0.081
+Saved pose index 2
+New value 0.082
+Saved pose index 1
+New value 0.081
+Saved pose index 0
+Initial error -0.051
+New value 0.074
+Deleted pose index 13
+New value 0.070
+Saved pose index 12
+New value 0.074
+Saved pose index 11
+New value 0.074
+Saved pose index 10
+New value 0.075
+Saved pose index 9
+New value 0.075
+Saved pose index 8
+New value 0.077
+Deleted pose index 7
+New value 0.075
+Saved pose index 6
+New value 0.075
+Saved pose index 5
+New value 0.075
+Saved pose index 4
+New value 0.075
+Saved pose index 3
+New value 0.076
+Saved pose index 2
+New value 0.076
+Saved pose index 1
+New value 0.077
+Saved pose index 0
+Initial error -0.046
+New value 0.070
+Deleted pose index 11
+New value 0.068
+Saved pose index 10
+New value 0.070
+Saved pose index 9
+New value 0.070
+Saved pose index 8
+New value 0.068
+Saved pose index 7
+New value 0.067
+Saved pose index 6
+New value 0.068
+Saved pose index 5
+New value 0.069
+Saved pose index 4
+New value 0.071
+Saved pose index 3
+New value 0.069
+Saved pose index 2
+New value 0.070
+Saved pose index 1
+New value 0.070
+Saved pose index 0
+Initial error -0.075
+New value 0.068
+Deleted pose index 10
+New value 0.067
+Saved pose index 9
+New value 0.066
+Saved pose index 8
+New value 0.066
+Saved pose index 7
+New value 0.067
+Saved pose index 6
+New value 0.066
+Saved pose index 5
+New value 0.068
+Saved pose index 4
+New value 0.068
+Saved pose index 3
+New value 0.069
+Saved pose index 2
+New value 0.069
+Saved pose index 1
+New value 0.068
+Saved pose index 0
+Initial error -0.059
+New value 0.070
+Deleted pose index 9
+New value 0.069
+Saved pose index 8
+New value 0.068
+Saved pose index 7
+New value 0.071
+Saved pose index 6
+New value 0.070
+Saved pose index 5
+New value 0.070
+Saved pose index 4
+New value 0.071
+Deleted pose index 3
+New value 0.071
+Saved pose index 2
+New value 0.071
+Saved pose index 1
+New value 0.071
+Saved pose index 0
+Initial error -0.058
+New value 0.069
+Deleted pose index 7
+New value 0.066
+Saved pose index 6
+New value 0.069
+Saved pose index 5
+New value 0.069
+Saved pose index 4
+New value 0.068
+Saved pose index 3
+New value 0.070
+Saved pose index 2
+New value 0.071
+Deleted pose index 1
+New value 0.072
+Saved pose index 0
+Initial error -0.076
+New value 0.066
+Deleted pose index 5
+New value 0.065
+Saved pose index 4
+New value 0.065
+Saved pose index 3
+New value 0.064
+Saved pose index 2
+New value 0.065
+Saved pose index 1
+New value 0.067
+Saved pose index 0
+Initial error -0.077
+New value 0.068
+Deleted pose index 4
+New value 0.066
+Saved pose index 3
+New value 0.066
+Saved pose index 2
+New value 0.070
+Deleted pose index 1
+New value 0.069
+Saved pose index 0
+Initial error -0.113
+New value 0.062
+Deleted pose index 2
+New value 0.055
+Saved pose index 1
+New value 0.059
+Saved pose index 0
+Initial error -0.099
+New value 0.048
+Deleted pose index 1
+New value 0.000
+Saved pose index 0
+Initial error -0.070
+New value 0.000
+Deleted pose index 0
+Initial error 0.000
+Found 0 poses with positive contribution
+Final error 0.000
