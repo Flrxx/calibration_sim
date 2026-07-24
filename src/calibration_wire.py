@@ -265,17 +265,34 @@ def _rate_batch_worker(model, dataset_eval, i_target, num_tries_in_batch, dh_arr
     new_error_list = []
     height = copy_model.estimated_dh.shape[0]
     
-    p_num, p_let = copy_model.params_from_letters(copy_model.error_list[i_target])
+    target_param_name = copy_model.error_list[i_target]
+    p_num, p_let = copy_model.params_from_letters(target_param_name)
     
     for i in range(num_tries_in_batch):
+        # 1. Генерируем реальную кривизну
         copy_model.change_real_dh(dh_array[i * height: (i+1) * height, :])
-        copy_model.estimated_dh = est_dh_array[i * height: (i+1) * height, :]
+        
+        # 2. ЗАГРУЖАЕМ КЭШ (База уже откалибрована 1-м проходом)
+        # Обязательно используем np.copy, чтобы не сломать исходный массив
+        copy_model.estimated_dh = np.copy(est_dh_array[i * height: (i+1) * height, :])
+        
+        # 3. Сбрасываем ТОЛЬКО целевой параметр в заводской ноль
         copy_model.estimated_dh[p_num][p_let] = copy_model.nominal_dh[p_num][p_let]
         
+        # 4. Измеряем дистанции (dataset_eval содержит точки только для целевого параметра и будущего мусора)
         dataset_curr = measure_all_distances(copy_model, copy.deepcopy(dataset_eval))
         
-        step_by_step_base_calibration(copy_model, dataset=dataset_curr, passes=passes, polish=polish)
+        # 5. ФИЛЬТРУЕМ ДАТАСЕТ (Оставляем только точки для целевого параметра)
+        target_mask = dataset_curr[:, 6] == target_param_name
+        target_dataset = dataset_curr[target_mask]
         
+        # 6. КАЛИБРУЕМ ТОЛЬКО ЦЕЛЕВОЙ ПАРАМЕТР
+        if len(target_dataset) > 0:
+            res = calibrate_single_param(copy_model, target_dataset)
+            # Записываем результат напрямую в матрицу
+            copy_model.estimated_dh[p_num][p_let] = res.x[0]
+        
+        # 7. Оцениваем ошибку
         est_params = np.array(copy_model.get_readable_params("estimated"))
         real_params = np.array(copy_model.get_readable_params("real"))
         nominal_params = np.array(copy_model.get_readable_params("nominal"))
