@@ -96,23 +96,23 @@
 
   "dynamic_constraints_deg": [
   {
-    "conditions": [{ "joint": 4, "range_deg": [130, 180] }],
+    "conditions": [{ "joint": 4, "range_deg": [150, 180] }],
     "then_joint": 5,
     "then_forbidden_range_deg": [[-180, -110], [-70, 70], [110, 180]]
   },
   {
-    "conditions": [{ "joint": 4, "range_deg": [-180, -130] }],
+    "conditions": [{ "joint": 4, "range_deg": [-180, -150] }],
     "then_joint": 5,
     "then_forbidden_range_deg": [[-180, -110], [-70, 70], [110, 180]]
   },
   
   {
-    "conditions": [{ "joint": 4, "range_deg": [-180, -130] }],
+    "conditions": [{ "joint": 4, "range_deg": [-180, -150] }],
     "then_joint": 6,
     "then_forbidden_range_deg": [[20, 160]]
   },
   {
-    "conditions": [{ "joint": 4, "range_deg": [130, 180] }],
+    "conditions": [{ "joint": 4, "range_deg": [150, 180] }],
     "then_joint": 6,
     "then_forbidden_range_deg": [[20, 160]]
   },

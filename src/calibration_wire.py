@@ -232,17 +232,17 @@ def _calibrate_list_of_dh(model, i_target, dataset, dh_list, passes, polish):
     copy_model = copy.deepcopy(model)
     height = copy_model.estimated_dh.shape[0]
 
-    est_dh_list = np.zeros(shape=dh_list.shape)
-    errors_list = np.zeros(len(copy_model.error_list))
-    
     num_iters = int(len(dh_list) / height)
+    # Возвращаем полную матрицу ошибок для вычисления медианы в главном потоке
+    errors_matrix = np.zeros((num_iters, len(copy_model.error_list)))
+    
     for i in range(num_iters):
+        copy_model.reset_estimated_dh()
         copy_model.change_real_dh(dh_list[i * height: (i+1) * height, :])
         current_dataset = measure_all_distances(copy_model, copy.deepcopy(dataset))
         
         step_by_step_base_calibration(copy_model, dataset=current_dataset, passes=passes, polish=polish)
         
-        errors = np.zeros(len(copy_model.error_list))
         est_params = np.array(copy_model.get_readable_params("estimated"))
         real_params = np.array(copy_model.get_readable_params("real"))
         nominal_params = np.array(copy_model.get_readable_params("nominal"))
@@ -251,48 +251,25 @@ def _calibrate_list_of_dh(model, i_target, dataset, dh_list, passes, polish):
             p_num, p_let = copy_model.params_from_letters(param_name)
             final_error = est_params[p_num][p_let] - real_params[p_num][p_let]
             start_error = nominal_params[p_num][p_let] - real_params[p_num][p_let]
-            errors[j] = abs(start_error) - abs(final_error)
-        
-        errors_list += errors
-        est_dh_list[i * height: (i+1) * height, :] = copy_model.estimated_dh
-        copy_model.reset_estimated_dh()
+            errors_matrix[i, j] = abs(start_error) - abs(final_error)
 
-    return est_dh_list, errors_list / num_iters
+    return errors_matrix
 
-
-def _rate_batch_worker(model, dataset_eval, i_target, num_tries_in_batch, dh_array, est_dh_array, passes, polish):
+def _rate_batch_worker(model, dataset_eval, i_target, num_tries_in_batch, dh_array, passes, polish):
     copy_model = copy.deepcopy(model)
     new_error_list = []
     height = copy_model.estimated_dh.shape[0]
     
-    target_param_name = copy_model.error_list[i_target]
-    p_num, p_let = copy_model.params_from_letters(target_param_name)
+    p_num, p_let = copy_model.params_from_letters(copy_model.error_list[i_target])
     
     for i in range(num_tries_in_batch):
-        # 1. Генерируем реальную кривизну
+        copy_model.reset_estimated_dh()
         copy_model.change_real_dh(dh_array[i * height: (i+1) * height, :])
         
-        # 2. ЗАГРУЖАЕМ КЭШ (База уже откалибрована 1-м проходом)
-        # Обязательно используем np.copy, чтобы не сломать исходный массив
-        copy_model.estimated_dh = np.copy(est_dh_array[i * height: (i+1) * height, :])
-        
-        # 3. Сбрасываем ТОЛЬКО целевой параметр в заводской ноль
-        copy_model.estimated_dh[p_num][p_let] = copy_model.nominal_dh[p_num][p_let]
-        
-        # 4. Измеряем дистанции (dataset_eval содержит точки только для целевого параметра и будущего мусора)
         dataset_curr = measure_all_distances(copy_model, copy.deepcopy(dataset_eval))
         
-        # 5. ФИЛЬТРУЕМ ДАТАСЕТ (Оставляем только точки для целевого параметра)
-        target_mask = dataset_curr[:, 6] == target_param_name
-        target_dataset = dataset_curr[target_mask]
+        step_by_step_base_calibration(copy_model, dataset=dataset_curr, passes=passes, polish=polish)
         
-        # 6. КАЛИБРУЕМ ТОЛЬКО ЦЕЛЕВОЙ ПАРАМЕТР
-        if len(target_dataset) > 0:
-            res = calibrate_single_param(copy_model, target_dataset)
-            # Записываем результат напрямую в матрицу
-            copy_model.estimated_dh[p_num][p_let] = res.x[0]
-        
-        # 7. Оцениваем ошибку
         est_params = np.array(copy_model.get_readable_params("estimated"))
         real_params = np.array(copy_model.get_readable_params("real"))
         nominal_params = np.array(copy_model.get_readable_params("nominal"))
@@ -303,7 +280,6 @@ def _rate_batch_worker(model, dataset_eval, i_target, num_tries_in_batch, dh_arr
         new_error_list.append(abs(start_error) - abs(final_error))
             
     return new_error_list
-
 
 def rate_poses_contributions(model, target_param, num_tries, floor, passes, polish):
     dataset_orig = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
@@ -340,24 +316,26 @@ def rate_poses_contributions(model, target_param, num_tries, floor, passes, poli
                 dh_array[i * height: (i+1) * height, :] = generate_real_dh(model)
                 
             dataset_full = np.vstack([target_poses, other_poses]) if len(target_poses) > 0 else other_poses
-            dataset_full_measured = measure_all_distances(model, copy.deepcopy(dataset_full))
 
             tasks = []
             start_idx = 0
             for i in range(num_cores):
-                current_batch_size = chunk_size + (1 if i < remainder else 0)
+                current_batch_size = chunk_size + (1 if i
+
+
+< remainder else 0)
                 if current_batch_size > 0:
                     end_idx = start_idx + current_batch_size
-                    tasks.append((model, i_target, dataset_full_measured,
+                    tasks.append((model, i_target, dataset_full,
                                   dh_array[start_idx * height : end_idx * height, :], passes, polish))
                     start_idx = end_idx
                     
             with Pool(processes=num_cores) as pool1:
                 results = pool1.starmap(_calibrate_list_of_dh, tasks)
 
-            est_dh_array = np.concatenate([x[0] for x in results], axis=0)
-            initial_errors_res = np.stack([x[1] for x in results])
-            initial_errors_list = np.mean(initial_errors_res, axis=0)
+            # Собираем полную матрицу (1000 x num_params) и берем МЕДИАНУ
+            all_initial_errors = np.vstack(results)
+            initial_errors_list = np.median(all_initial_errors, axis=0)
             
             initial_error = initial_errors_list[i_target] if len(target_poses) > 0 else 0.0
             print(f"Initial error {initial_error:.3f}")
@@ -367,7 +345,6 @@ def rate_poses_contributions(model, target_param, num_tries, floor, passes, poli
             for pose_num in range(len(target_poses) - 1, -1, -1):
                 temp_target = np.delete(target_poses, pose_num, axis=0)
                 dataset_eval = np.vstack([temp_target, other_poses]) if len(temp_target) > 0 else other_poses
-                dataset_eval_measured = measure_all_distances(model, copy.deepcopy(dataset_eval))
 
                 tasks = []
                 start_idx = 0
@@ -375,14 +352,14 @@ def rate_poses_contributions(model, target_param, num_tries, floor, passes, poli
                     current_batch_size = chunk_size + (1 if i < remainder else 0)
                     if current_batch_size > 0:
                         end_idx = start_idx + current_batch_size
-                        tasks.append((model, dataset_eval_measured, i_target, current_batch_size,
-                                      dh_array[start_idx * height : end_idx * height, :],
-                                      est_dh_array[start_idx * height : end_idx * height, :], passes, polish))
+                        tasks.append((model, dataset_eval, i_target, current_batch_size,
+                                      dh_array[start_idx * height : end_idx * height, :], passes, polish))
                         start_idx = end_idx
 
                 results = pool.starmap(_rate_batch_worker, tasks)
                 new_error_vector = np.concatenate(results)
-                new_median = np.mean(new_error_vector) 
+                # Берем строгую МЕДИАНУ
+                new_median = np.median(new_error_vector) 
 
                 print(f"New value {new_median:.3f}")
                 
