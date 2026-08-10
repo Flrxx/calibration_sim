@@ -64,7 +64,7 @@ class HayatiModel:
         self.error_list = config["error_list"]
         self.calibration_mask = config["calibration_mask"]
         self.wrist_params = config["wrist_params"]
-        self.base_params = list(set(self.calibration_mask) - set(self.wrist_params))
+        #self.base_params = list(set(self.calibration_mask) - set(self.wrist_params))
 
         
         self.angle_idexes = [i for i, e in enumerate(self.error_list) if any(sub in e for sub in ("alpha", "theta", "beta"))]

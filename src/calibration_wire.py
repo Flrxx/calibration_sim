@@ -32,11 +32,11 @@ def step_by_step_base_calibration(model: hayati_model.HayatiModel, dataset=[], i
             calibration_mask[i] = True
     filtered_dataset = dataset[calibration_mask]
     
-    for _ in range(passes):
-        for i in range (len(model.base_params)):
-            single_param_dataset = filtered_dataset[filtered_dataset[:, 6] == model.base_params[i]]
+    for _ in range(passes):                                  
+        for i in range (len(model.error_list)):
+            single_param_dataset = filtered_dataset[filtered_dataset[:, 6] == model.error_list[i]]
 
-            param_num, param_letter_num = model.params_from_letters(model.base_params[i])
+            param_num, param_letter_num = model.params_from_letters(model.error_list[i])
             if(len(single_param_dataset) == 0):
                 continue        
 
@@ -52,8 +52,8 @@ def step_by_step_base_calibration(model: hayati_model.HayatiModel, dataset=[], i
     return True
 
 def calibrate_single_param(model: hayati_model.HayatiModel, dataset: Union[np.ndarray, list]): 
-    param_index = int(model.base_params.index(dataset[0, 6]))
-    param_num, param_letter_num = model.params_from_letters(model.base_params[param_index])
+    param_index = int(model.error_list.index(dataset[0, 6]))
+    param_num, param_letter_num = model.params_from_letters(model.error_list[param_index])
     real_distances = dataset[:,7]
 
     def loss_function(optimizing_param):
@@ -69,7 +69,7 @@ def calibrate_single_param(model: hayati_model.HayatiModel, dataset: Union[np.nd
         
         return error
 
-    #print(f"Optimizing param {model.base_params[param_index]}...")
+    #print(f"Optimizing param {model.error_list[param_index]}...")
     if (param_index in model.angle_idexes):
         bounds = Bounds(model.nominal_dh[param_num][param_letter_num] - 2 * DEG, 
                         model.nominal_dh[param_num][param_letter_num] + 2 * DEG) # [-2 * DEG, 2 * DEG]
