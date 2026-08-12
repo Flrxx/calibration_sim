@@ -2,12 +2,12 @@ import numpy as np
 import matplotlib.pyplot as plt 
 from math import cos, sin, pi, sqrt, atan2, asin, log10, acos, copysign
 from typing import Union
-from math_routines import x_rot, y_rot, z_rot, arbitrary_axis_rot, trans
+from math_routines import x_rot, y_rot, z_rot, arbitrary_axis_rot, trans, extract_zyx_euler, euler_zyx_to_matrix
 from robotic_transformations import dh_trans, hayati_trans
 import multiprocessing as mp
 import copy
 from math_routines import DEG
-from scipy.optimize import minimize
+from scipy.optimize import minimize, least_squares
 import random
 
 np.set_printoptions(
@@ -20,30 +20,28 @@ class HayatiModel:
         self.generation_output = config['generation_output']
         self.contribution_dataset = config['contribution_dataset']
         self.calibration_dataset = config['calibration_dataset']
-        self.wrist_dataset = config['wrist_dataset']
 
         self.test_dataset_file = config['test_dataset_file']
         self.results_file = config["results_file"]
 
         # DH params: [a, alpha, d/beta, theta_offset, parallel_axis]. Angle beta is used instead of d if axis is nearly parallel to the previous
         self.nominal_dh = np.array(config['nominal_dh'])
-        self.nominal_base_params = config['nominal_base_params']
         self.nominal_tool_params = config['nominal_tool_params']
+        self.nominal_base_params = [0, 0, 0, 0, 0, 0]
         
         self.estimated_dh = copy.deepcopy(self.nominal_dh)
-        self.estimated_base_params = copy.deepcopy(self.nominal_base_params)
         self.estimated_tool_params = copy.deepcopy(self.nominal_tool_params)
-        
+        self.estimated_base_params = [0, 0, 0, 0, 0, 0]
+
         self.real_dh = np.array(config['real_dh'])
-        self.real_base_params = config['real_base_params']
         self.real_tool_params = config['real_tool_params']
+        self.real_base_params = [0, 0, 0, 0, 0, 0]
         
         self.joint_limits_general_h = config["joint_limits_general_h"]
         self.joint_limits_general_l = config["joint_limits_general_l"]
         self.bounds = np.array([(self.joint_limits_general_l[i], self.joint_limits_general_h[i]) for i in range(6)])
 
         self.cartesian_limits = config["cartesian_limits"]
-        self.max_z_angle = config["max_z_angle"]
         
         self.test_samples_number = config["test_samples_number"]
 
@@ -63,7 +61,6 @@ class HayatiModel:
         self.encoder_resolution = config["encoder_resolution_mm"] / 1000
         self.error_list = config["error_list"]
         self.calibration_mask = config["calibration_mask"]
-        self.wrist_params = config["wrist_params"]
         #self.base_params = list(set(self.calibration_mask) - set(self.wrist_params))
 
         
@@ -81,9 +78,6 @@ class HayatiModel:
         self.angle_limit_wire = config["angle_limit_wire_deg"] * DEG
 
         self.dynamic_constrains_deg = config["dynamic_constraints_deg"]
-
-        self.distance_delta = config["distance_delta_mm"] / 1000
-        self.angle_delta = config["angle_delta_deg"] * DEG
         
         self.a_delta = config["a_delta_mm"] / 1000
         self.alpha_delta = config["alpha_delta_deg"] * DEG
@@ -390,3 +384,37 @@ class HayatiModel:
         if alpha_z > self.angle_limit_z: return False
             
         return True
+
+    def inverse_kinematics(self, target_point, initial_guess=None):
+        if initial_guess == None:
+            initial_guess = np.array([0, 0, 0, 0, 0, 0])
+
+        target_coords = target_point[0:3]
+        target_orient = euler_zyx_to_matrix(target_point[3:])
+
+        def objective_function(angles):
+            current_point = self.get_transition_matrix(angles, "nominal")
+            current_coords = current_point[0:3, 3]
+            current_orientation = current_point[0:3, 0:3]
+
+            dist_error = target_coords - current_coords
+            orientation_error = (target_orient - current_orientation).flatten()
+
+            return np.concatenate([dist_error, orientation_error])
+
+        result = least_squares(
+            objective_function, 
+            initial_guess, 
+            bounds=(self.joint_limits_general_l, self.joint_limits_general_h),
+            method='trf',
+            max_nfev=2000,
+            ftol=1e-6, 
+            xtol=1e-6
+        )
+        
+        if not result.success:
+            raise RuntimeError(f"Numerical IK solver failed: {result.message}")
+            
+        return result.x
+            
+            

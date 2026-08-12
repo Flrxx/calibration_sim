@@ -397,7 +397,7 @@ def measure_real_distance(model, angles: Union[list, np.ndarray]):
     distance *= 1 + model.encoder_linear_scale 
 
     # Gauss
-    #distance += gauss(0, 0.1 / 1000.0)
+    distance += gauss(0, 0.1 / 1000.0)
     
     # 3. Применяем разрешение энкодера (ступенчатость)
     if model.encoder_resolution != 0:

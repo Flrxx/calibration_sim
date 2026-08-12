@@ -20,52 +20,41 @@
     [-0.55, 0.4],
     [0.1, 1.0]
   ],
+
   "nominal_dh": [
     [0,       -1.5708,    0.17,     0,        0],
     [0.46,    0,          0,        -1.5708,  1],
     [0.38,    0,          0,        0,        1],
     [0,       1.5708,     -0.135,   1.5708,   0],
     [0,       -1.5708,    0.109,    0,        0],
-    [0,       3.14159,    -0.061,   0,        0]
-  ],
-  "nominal_base_params": [
-    0, 0, 0, 0, 0, 0 
+    [0,       3.14159,    -0.1776,   0,       0]
   ],
   "nominal_tool_params": [
-    0, 0.06454, 0.0364, 0, 0, 0
-  ],
-"real_dh": [[0.00027220141248357493, -1.5703642588765165, 0.17, -5.043411840521356e-05, 0],
-    [0.4571304326656363, 0.0, 7.844017818669465e-05, -1.5716094659621715, 1],
-    [0.38, -0.00019853778741835381, 0.00010236460710821758, -0.001058511719165951, 1],
-    [-0.0005459402896554936, 1.5708201625832359, -0.135, 1.5707444022512347, 0],
-    [0.0, -1.5707863430383613, 0.109, 3.0300174726661482e-05, 0],
-    [-5.920309066907836e-05, 3.14159, -0.06928674322674604, 0.0, 0]
-  ],
-  "real_base_params": [
-    0, 0, 0, 0, 0, 0
+    0, 0.075, 0.0364, 0, 0, 0
   ],
 
+"real_dh": [
+    [0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0]
+  ],
   "real_tool_params": [
-    0, 0.06454, 0.0364, 0, 0, 0
+    0, 0.075, 0.0364, 0, 0, 0
   ],
 
   "zero_wire_angles":[
-    14.53,
-    24.85,
-    141.04,
-    -75.87,
-    90.000,
-    -14.51
+    14.921, 4.159, 136.364, -50.502, 90.000, -14.901
   ],
   "encoder_abs_tolerance_percent": 0.08,
-  "encoder_resolution_mm": 0.05,
-  "max_z_angle": 3.14,  
+  "encoder_resolution_mm": 0.05,  
   "generation_output": "datasets/ARM95/wire/generation/generation_output.csv",
-  "contribution_dataset": "datasets/ARM95/wire/contribution/contribution_dataset.csv",
-  "calibration_dataset": "datasets/ARM95/wire/calibration/calibration_dataset.csv",
+  "contribution_dataset": "datasets/ARM95/wire/contribution/contribution_dataset_45_deg.csv",
+  "calibration_dataset": "datasets/ARM95/wire/calibration/calibration_dataset_45_deg.csv",
   "test_dataset_file": "datasets/ARM95/absolute/random_samples.csv",
   "results_file": "results/ARM95/results.json",
-  "wrist_dataset": "datasets/ARM95/wire/generation/wrist_dataset.csv",
 
   "error_list": [
     "alpha_6", 
@@ -86,8 +75,7 @@
     "beta_2", "alpha_1", "a_1"
   ], 
 
-  "wrist_params": [
-  ], 
+  "ignore_errors_list": [],
                   
   "wire_limits_l_mm": 80,
   "wire_limits_h_mm": 10000,
@@ -137,9 +125,6 @@
     "then_forbidden_range_deg": [[-180, -40], [160, 180]]
   }
   ],
-
-  "distance_delta_mm": 1.0,
-  "angle_delta_deg": 1.0,
   
   "a_delta_mm": 1,
   "alpha_delta_deg": 0.3,
@@ -147,6 +132,5 @@
   "theta_delta_deg": 0.3,
   "beta_delta_deg": 0.3,
 
-  "ignore_errors_list": [],
   "test_samples_number": 100
 }

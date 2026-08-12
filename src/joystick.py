@@ -82,24 +82,27 @@ class JointJoysticks:
             width = 400
             height = 30
             joystick_i = LinearJoystick(x, y, width, height, [joysticks_limits_h[i], joysticks_limits_l[i]], i)
-            if i == 0:
-                joystick_i.value = 0
-                joystick_i.update_knob_position_from_value()
-            if i == 1:
-                joystick_i.value = 0
-                joystick_i.update_knob_position_from_value()
-            if i == 2:
-                joystick_i.value = 90
-                joystick_i.update_knob_position_from_value()
-            if i == 3:
-                joystick_i.value = 0
-                joystick_i.update_knob_position_from_value()
-            if i == 4:
-                joystick_i.value = 90.00
-                joystick_i.update_knob_position_from_value()
-            if i == 5:
-                joystick_i.value = 0
-                joystick_i.update_knob_position_from_value()
+            values = [14.945, 3.678, 136.696, -50.373, 90.000, -14.945]
+            joystick_i.value = values[i]
+            joystick_i.update_knob_position_from_value()
+            # if i == 0:
+            #     joystick_i.value = 14.55
+            #     joystick_i.update_knob_position_from_value()
+            # if i == 1:
+            #     joystick_i.value = 24.53
+            #     joystick_i.update_knob_position_from_value()
+            # if i == 2:
+            #     joystick_i.value = 90
+            #     joystick_i.update_knob_position_from_value()
+            # if i == 3:
+            #     joystick_i.value = 0
+            #     joystick_i.update_knob_position_from_value()
+            # if i == 4:
+            #     joystick_i.value = 90.00
+            #     joystick_i.update_knob_position_from_value()
+            # if i == 5:
+            #     joystick_i.value = 0
+            #     joystick_i.update_knob_position_from_value()
             # if(i == 2 or i == 4):
             #     joystick_i.value = 90
             #     joystick_i.update_knob_position_from_value()

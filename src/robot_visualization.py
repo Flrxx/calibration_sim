@@ -1,3 +1,6 @@
+import os
+os.environ["SDL_AUDIODRIVER"] = "dummy"
+
 import pygame
 import argparse
 import json

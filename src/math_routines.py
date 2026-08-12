@@ -44,3 +44,7 @@ def trans(vector: np.ndarray) -> np.ndarray:
 def extract_zyx_euler(mat: np.ndarray) -> np.ndarray:
     r = Rotation.from_matrix(mat)
     return r.as_euler('ZYX')
+
+def euler_zyx_to_matrix(euler_angles: np.ndarray) -> np.ndarray:
+    r = Rotation.from_euler('ZYX', euler_angles)
+    return r.as_matrix()

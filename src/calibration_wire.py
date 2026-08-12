@@ -32,7 +32,7 @@ def step_by_step_base_calibration(model: hayati_model.HayatiModel, dataset=[], i
             calibration_mask[i] = True
     filtered_dataset = dataset[calibration_mask]
     
-    for _ in range(passes):                                  
+    for _ in range(passes):
         for i in range (len(model.error_list)):
             single_param_dataset = filtered_dataset[filtered_dataset[:, 6] == model.error_list[i]]
 
@@ -45,7 +45,6 @@ def step_by_step_base_calibration(model: hayati_model.HayatiModel, dataset=[], i
             final_value = optimizing_param.x[0]
             model.estimated_dh[param_num][param_letter_num] = final_value 
 
-    # Глобальная полировка перенесена сюда
     if polish:
         run_global_polish(model, filtered_dataset[:, :8], limit_mm=5, limit_deg=5)
 
