@@ -37,8 +37,8 @@ class HayatiModel:
         self.real_tool_params = config['real_tool_params']
         self.real_base_params = [0, 0, 0, 0, 0, 0]
         
-        self.joint_limits_general_h = config["joint_limits_general_h"]
-        self.joint_limits_general_l = config["joint_limits_general_l"]
+        self.joint_limits_general_h = np.array(config["joint_limits_general_h"]) * DEG
+        self.joint_limits_general_l = np.array(config["joint_limits_general_l"]) * DEG
         self.bounds = np.array([(self.joint_limits_general_l[i], self.joint_limits_general_h[i]) for i in range(6)])
 
         self.cartesian_limits = config["cartesian_limits"]

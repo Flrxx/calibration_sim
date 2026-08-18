@@ -117,11 +117,11 @@ class MCX:
             value = -1
         return value
 
-    def execute_moveL(self, point: np.ndarray, velocity=0.03): #0.03
+    def execute_moveL(self, point: np.ndarray, velocity=0.3): #0.03
         self.motion_program.addMoveL([Waypoint(point)], velocity=velocity)
         self.execute_move()
     
-    def execute_moveJ(self, pose: np.ndarray, rotational_velocity=0.2): #0.1
+    def execute_moveJ(self, pose: np.ndarray, rotational_velocity=1): #0.2
         self.motion_program.addMoveJ([Waypoint(pose)], rotational_velocity=rotational_velocity)
         self.execute_move()
 
@@ -199,8 +199,8 @@ class MCX:
                 
                 self.execute_moveJ(pose[:6])
                 print(f"Done pose {i + 2 + self.start_num}")       
-                time.sleep(3)
-                #input()
+                #time.sleep(3)
+                input()
                 tcp_coords_nom = self.robot_PoseTransformer.calcJointToCartPose(pose[:6]).jointtocartlist[0].cartpose.coordinates[0:3]
                 distance_theor = sqrt((tcp_coords_nom[0] - zero_point[0])**2 + (tcp_coords_nom[1] - zero_point[1])**2 + (tcp_coords_nom[2] - zero_point[2])**2)
                 print(f"Theoretical distance: {(distance_theor * 1000):.2f} mm")
@@ -230,8 +230,8 @@ class MCX:
         
                 self.execute_moveJ(pose[:6])
                 print(f"Done pose {i + 2 + self.start_num}")
-                time.sleep(3)
-                #input()
+                #time.sleep(3)
+                input()
                 wire_len = self.get_wire_distance(self.null_value)
                 if wire_len > 0:
                     print(f"Wire lenght: {wire_len}")
