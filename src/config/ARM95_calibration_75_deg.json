@@ -20,6 +20,7 @@
     [-0.55, 0.4],
     [0.1, 1.0]
   ],
+
   "nominal_dh": [
     [0,       -1.5708,    0.17,     0,        0],
     [0.46,    0,          0,        -1.5708,  1],
@@ -29,7 +30,7 @@
     [0,       3.14159,    -0.1776,   0,        0]
   ],
   "nominal_tool_params": [
-    0, 0.075, 0.0364, 0, 0, 0
+    0, 0.075, 0.0355, 0, 0, 0
   ],
   "real_dh": [
       [0, 0, 0, 0, 0],
@@ -45,7 +46,7 @@
   ],
 
   "zero_wire_angles":[
-    105.93, 5.06, 135.92, -50.96, 90.000, -15.93
+    105.91, 5.03, 135.92, -50.95, 90.000, -15.91
   ],
 
   "encoder_abs_tolerance_percent": 0.08,
@@ -84,30 +85,72 @@
 
   "dynamic_constraints_deg": [
     {
-      "conditions": [{ "joint": 4, "range_deg": [85, 180] }],
+      "conditions": [{ "joint": 4, "range_deg": [70, 180] }],
       "then_joint": 5,
-      "then_forbidden_range_deg": [[90, 180]]
+      "then_forbidden_range_deg": [[-180, -120], [90, 180]]
     },
     {
-      "conditions": [{ "joint": 4, "range_deg": [85, 180] }, { "joint": 5, "range_deg": [80, 180] }],
+      "conditions": [{ "joint": 4, "range_deg": [70, 180] }, { "joint": 5, "range_deg": [80, 180] }],
       "then_joint": 6,
       "then_forbidden_range_deg": [[-360, -180], [0, 180]]
     },
     {
-      "conditions": [{ "joint": 4, "range_deg": [85, 180] }],
-      "then_joint": 5,
-      "then_forbidden_range_deg": [[-180, -120]]
-    },
-    {
       "conditions": [{ "joint": 4, "range_deg": [-180, -85] }],
       "then_joint": 5,
-      "then_forbidden_range_deg": [[-180, -120]]
+      "then_forbidden_range_deg": [[-180, -95]]
+    },
+    {
+      "conditions": [{ "joint": 4, "range_deg": [-180, -70] }, { "joint": 5, "range_deg": [-180, -80] }],
+      "then_joint": 6,
+      "then_forbidden_range_deg": [[-360, -180], [0, 220]]
     },
     {
     "conditions": [
       { "joint": 3, "range_deg": [-180, -30] }],
       "then_joint": 4,
       "then_forbidden_range_deg": [[-180, -90], [90, 180]]
+    },
+    {
+    "conditions": [
+      { "joint": 3, "range_deg": [140, 155] }],
+      "then_joint": 4,
+      "then_forbidden_range_deg": [[-30, 180]]
+    },
+    {
+    "conditions": [
+      { "joint": 2, "range_deg": [45, 90] }],
+      "then_joint": 3,
+      "then_forbidden_range_deg": [[-180, -60]]
+    },
+    {
+    "conditions": [
+      { "joint": 3, "range_deg": [-180, -140] }],
+      "then_joint": 4,
+      "then_forbidden_range_deg": [[-180, 20]]
+    },
+    {
+    "conditions": [
+      { "joint": 2, "range_deg": [-90, -45] }],
+      "then_joint": 1,
+      "then_forbidden_range_deg": [[-90, -50], [230, 270]]
+    },
+    {
+    "conditions": [
+      { "joint": 1, "range_deg": [180, 270] }, { "joint": 2, "range_deg": [-90, -30] }],
+      "then_joint": 3,
+      "then_forbidden_range_deg": [[0, 180]]
+    },
+        {
+    "conditions": [
+      { "joint": 1, "range_deg": [-90, 0] }],
+      "then_joint": 3,
+      "then_forbidden_range_deg": [[-180, 0]]
+    },
+    {
+    "conditions": [
+      { "joint": 1, "range_deg": [180, 270] }],
+      "then_joint": 2,
+      "then_forbidden_range_deg": [[70, 90]]
     }
   ],
   
