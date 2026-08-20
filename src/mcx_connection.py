@@ -199,8 +199,8 @@ class MCX:
                 
                 self.execute_moveJ(pose[:6])
                 print(f"Done pose {i + 2 + self.start_num}")       
-                #time.sleep(3)
-                input()
+                time.sleep(3)
+                #input()
                 tcp_coords_nom = self.robot_PoseTransformer.calcJointToCartPose(pose[:6]).jointtocartlist[0].cartpose.coordinates[0:3]
                 distance_theor = sqrt((tcp_coords_nom[0] - zero_point[0])**2 + (tcp_coords_nom[1] - zero_point[1])**2 + (tcp_coords_nom[2] - zero_point[2])**2)
                 print(f"Theoretical distance: {(distance_theor * 1000):.2f} mm")
@@ -221,7 +221,7 @@ class MCX:
                 distance_theor = sqrt((tcp_coords_nom[0] - zero_point[0])**2 + (tcp_coords_nom[1] - zero_point[1])**2 + (tcp_coords_nom[2] - zero_point[2])**2)
                 
                 vertical_offset_point =  copy.deepcopy(zero_point)
-                vertical_offset_point[2] += distance_theor + 50/1000 #mm
+                vertical_offset_point[2] += distance_theor + 80/1000 #mm
                 print(f"Theoretical distance: {(distance_theor * 1000):.2f} mm")
             
                 self.execute_moveL(vertical_offset_point)
@@ -230,8 +230,8 @@ class MCX:
         
                 self.execute_moveJ(pose[:6])
                 print(f"Done pose {i + 2 + self.start_num}")
-                #time.sleep(3)
-                input()
+                time.sleep(3)
+                #input()
                 wire_len = self.get_wire_distance(self.null_value)
                 if wire_len > 0:
                     print(f"Wire lenght: {wire_len}")

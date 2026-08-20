@@ -1,6 +1,6 @@
 {
   "joint_limits_general_h": [
-    270,
+    75,
     90,
     155,
     180,
@@ -42,7 +42,7 @@
     ],
 
   "real_tool_params": [
-    0, 0.075, 0.0364, 0, 0, 0
+    0, 0.075, 0.0355, 0, 0, 0
   ],
 
   "zero_wire_angles":[
@@ -78,10 +78,10 @@
 
   "ignore_errors_list": [],
                   
-  "wire_limits_l_mm": 100,
-  "wire_limits_h_mm": 10000,
-  "angle_limit_wire_deg": 75,
-  "angle_limit_z_deg": 75,
+  "wire_limits_l_mm": 200,
+  "wire_limits_h_mm": 700,
+  "angle_limit_wire_deg": 45,
+  "angle_limit_z_deg": 45,
 
   "dynamic_constraints_deg": [
     {
