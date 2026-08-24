@@ -772,7 +772,7 @@ def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: i
     params_error_median = np.sum(params_error, axis=0) / len(params_error)
 
     print("\n" + "="*50)
-    print(" РЕЗУЛЬТАТЫ ГИБРИДНОЙ КАЛИБРОВКИ (в МИЛЛИМЕТРАХ)")
+    print(" РЕЗУЛЬТАТЫ КАЛИБРОВКИ (в МИЛЛИМЕТРАХ)") 
     print("="*50)
     print(f"Nominal error (до калибровки):     {nominal_error_median:.4f} мм")
     print(f"After calibration (после):         {estimated_error_median:.4f} мм")

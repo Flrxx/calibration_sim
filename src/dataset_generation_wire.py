@@ -439,7 +439,7 @@ def generate_initial_poses(model: hayati_model.HayatiModel, target_param, start_
     attempts = 0
     target_idx = model.error_list.index(target_param)
     
-    while len(valid_poses) < num_candidates * 2 and attempts < 30000:
+    while len(valid_poses) < num_candidates * 2 and attempts < 100000:
         attempts += 1
         q_rand = np.copy(model.zero_wire_angles)
         
