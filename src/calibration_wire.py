@@ -806,7 +806,7 @@ def main(args):
             dataset = read_dataset(model.calibration_dataset, model.fieldnames_options["wire_samples"]) 
             dataset[:, 0:6] *= DEG
             dataset[:, 7] /= 1000
-            step_by_step_base_calibration(model, dataset=dataset)
+            step_by_step_base_calibration(model, dataset=dataset, passes=args.passes, polish=args.polish)
             write_results(model)
             write_validation_dataset(model, args.is_real)
             write_validation_dataset(model, args.is_real, source_path="results/ARM95/validation_results_calib.csv")
