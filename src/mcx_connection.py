@@ -300,6 +300,8 @@ class MCX:
                 vertical_offset_point =  copy.deepcopy(zero_point)
                 vertical_offset_point[2] += 0.3
                 self.execute_moveL(vertical_offset_point)
+
+            distance_theor = np.linalg.norm(calculate_distance(model, result[i_result, 0:6], "nominal"))
             
             print(f"Theoretical distance: {(distance_theor * 1000):.2f} mm")
         
