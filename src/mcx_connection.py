@@ -117,11 +117,11 @@ class MCX:
             value = -1
         return value
 
-    def execute_moveL(self, point: np.ndarray, velocity=0.3): #0.03
+    def execute_moveL(self, point: np.ndarray, velocity=0.03): #0.03
         self.motion_program.addMoveL([Waypoint(point)], velocity=velocity)
         self.execute_move()
     
-    def execute_moveJ(self, pose: np.ndarray, rotational_velocity=1): #0.2
+    def execute_moveJ(self, pose: np.ndarray, rotational_velocity=0.2): #0.2
         self.motion_program.addMoveJ([Waypoint(pose)], rotational_velocity=rotational_velocity)
         self.execute_move()
 
