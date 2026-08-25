@@ -815,7 +815,7 @@ def main(args):
 
     elif args.mode == 'validation':
         validation_poses = generate_validation_dataset(model, num_points=args.tries_count, num_bins=args.num_bins)
-        export_validation_csv(model, validation_poses, "datasets/ARM95/wire/validation_dataset.csv")
+        export_validation_csv(model, validation_poses, "datasets/ARM95/wire/validation_dataset_back.csv")
         #get_dataset_for_validation(model, args.tries_count, 15 * DEG, [100 / 1000, 600 / 1000], 15*DEG)
     elif args.mode == 'correct':
         correct_poses(model)

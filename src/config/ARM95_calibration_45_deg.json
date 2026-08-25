@@ -1,6 +1,6 @@
 {
   "joint_limits_general_h": [
-    270,
+    180,
     90,
     155,
     180,
@@ -8,7 +8,7 @@
     360
   ],
   "joint_limits_general_l": [
-    -90,
+    0,
     -90,
     -155,
     -180,
@@ -46,7 +46,7 @@
   ],
 
   "zero_wire_angles":[
-    105.91, 5.16, 135.99, -51.15, 90.000, -15.91
+   66.92, -5.00, -136.26, 51.26, -90, 23.08
   ],
   "encoder_abs_tolerance_percent": 0.08,
   "encoder_resolution_mm": 0.05,  
@@ -77,8 +77,8 @@
 
   "ignore_errors_list": [],
                   
-  "wire_limits_l_mm": 100,
-  "wire_limits_h_mm": 10000,
+  "wire_limits_l_mm": 400,
+  "wire_limits_h_mm": 600,
   "angle_limit_wire_deg": 45,
   "angle_limit_z_deg": 45,
 
@@ -102,60 +102,6 @@
       "conditions": [{ "joint": 4, "range_deg": [-180, -70] }, { "joint": 5, "range_deg": [-180, -80] }],
       "then_joint": 6,
       "then_forbidden_range_deg": [[-360, -180], [0, 220]]
-    },
-    {
-    "conditions": [
-      { "joint": 3, "range_deg": [-180, -30] }],
-      "then_joint": 4,
-      "then_forbidden_range_deg": [[-180, -90], [90, 180]]
-    },
-    {
-    "conditions": [
-      { "joint": 3, "range_deg": [140, 155] }],
-      "then_joint": 4,
-      "then_forbidden_range_deg": [[-30, 180]]
-    },
-    {
-    "conditions": [
-      { "joint": 2, "range_deg": [45, 90] }],
-      "then_joint": 3,
-      "then_forbidden_range_deg": [[-180, -60]]
-    },
-    {
-    "conditions": [
-      { "joint": 3, "range_deg": [-180, -140] }],
-      "then_joint": 4,
-      "then_forbidden_range_deg": [[-180, 20]]
-    },
-    {
-    "conditions": [
-      { "joint": 2, "range_deg": [-90, -45] }],
-      "then_joint": 1,
-      "then_forbidden_range_deg": [[-90, -50], [230, 270]]
-    },
-    {
-    "conditions": [
-      { "joint": 1, "range_deg": [180, 270] }, { "joint": 2, "range_deg": [-90, -30] }],
-      "then_joint": 3,
-      "then_forbidden_range_deg": [[0, 180]]
-    },
-    {
-    "conditions": [
-      { "joint": 1, "range_deg": [-90, 0] }],
-      "then_joint": 3,
-      "then_forbidden_range_deg": [[-180, 0]]
-    },
-    {
-    "conditions": [
-      { "joint": 1, "range_deg": [180, 270] }],
-      "then_joint": 2,
-      "then_forbidden_range_deg": [[70, 90]]
-    },
-    {
-    "conditions": [
-      { "joint": 1, "range_deg": [40, 140] }],
-      "then_joint": 2,
-      "then_forbidden_range_deg": [[70, 90]]
     }
   ],
   

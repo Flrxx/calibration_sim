@@ -301,7 +301,7 @@ class MCX:
                 vertical_offset_point[2] += 0.3
                 self.execute_moveL(vertical_offset_point)
 
-            distance_theor = np.linalg.norm(calculate_distance(model, result[i_result, 0:6], "nominal"))
+                #distance_theor = np.linalg.norm(calculate_distance(model, result[i_result, 0:6], "nominal"))
             
             print(f"Theoretical distance: {(distance_theor * 1000):.2f} mm")
         
@@ -332,7 +332,7 @@ class MCX:
         return result
 
     def write_validation_dataset(self, model: hayati_model.HayatiModel):              
-        validation_dataset = read_dataset("datasets/ARM95/wire/validation_dataset.csv", [
+        validation_dataset = read_dataset("datasets/ARM95/wire/validation_dataset_back.csv", [
         "q1", "q2", "q3", "q4", "q5", "q6", 
         "d_nom", "d_real", "d_est", "diff"
         ])  
@@ -348,7 +348,7 @@ class MCX:
         
         validation_result[:, :6] /= DEG
         validation_result[:, 6:] *= 1000
-        write_dataset(validation_result, "results/ARM95/validation_results.csv", model.fieldnames_options["test_result"])
+        write_dataset(validation_result, "results/ARM95/validation_results_back.csv", model.fieldnames_options["test_result"])
         print("Done")
 
     def calculate_wire_angles(self, model: hayati_model.HayatiModel, pose: np.ndarray):

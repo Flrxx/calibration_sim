@@ -80,8 +80,8 @@
                   
   "wire_limits_l_mm": 100,
   "wire_limits_h_mm": 10000,
-  "angle_limit_wire_deg": 45,
-  "angle_limit_z_deg": 45,
+  "angle_limit_wire_deg": 75,
+  "angle_limit_z_deg": 75,
 
   "dynamic_constraints_deg": [
     {
