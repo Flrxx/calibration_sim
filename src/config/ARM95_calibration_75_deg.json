@@ -72,23 +72,25 @@
     "d_1", "theta_1"],
 
   "calibration_mask":[
+    "beta_2",
     "beta_3",
+
     "theta_2",
     "theta_3",
-    "a_4",
-    "alpha_3",
-    "a_2",
-    "beta_2",
-    "alpha_5",
-    "d_6",
-    "theta_6",
-    "theta_5",
-    "alpha_6",
-    "a_3",
     "theta_4",
+    "theta_5",
+    "theta_6",
+
     "alpha_1",
-    "a_5"
-], 
+    "alpha_3",
+    "alpha_5",
+    "alpha_6",
+    "a_2",
+    "a_3",
+    "a_4",
+    "a_5",
+    "d_6" 
+],
 
   "ignore_errors_list": [],
                   

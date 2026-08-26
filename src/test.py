@@ -4,32 +4,38 @@ import argparse
 import copy
 import itertools
 from typing import List, Tuple
+from multiprocessing import Pool, cpu_count
+
 from calibration_wire import step_by_step_base_calibration, validate_wire
 import hayati_model
 from csv_routines import read_dataset
 from math_routines import DEG
 
-# Базовый набор параметров (твоя зафиксированная маска из 15 параметров)
-# BASE_PARAMS = [
-#     "beta_3", "theta_2", "theta_3", "a_4", "alpha_3", "a_2", "beta_2", "alpha_5",
-#     "d_6", "theta_6", "theta_5", "alpha_6", "a_3", "theta_4", "alpha_1"
-# ]
-
-# # Кандидаты на добавление (оставшиеся кинематические параметры, кроме невидимых d_1, theta_1)
-# CANDIDATE_PARAMS = [
-#     "a_6", "a_5", "d_5", "alpha_4", "alpha_2", "a_1"#, "d_4"
-# ]
-
+# Базовый набор параметров (твоя зафиксированная маска)
 BASE_PARAMS = [
-    "beta_3", "theta_2", "theta_3", "beta_2", "theta_6", "theta_5","theta_4"
+
+    "beta_2",
+    "beta_3",
+    "theta_2",
+    "theta_3",
+
+    "theta_6",
+
+  
 ]
 
-# Кандидаты на добавление (оставшиеся кинематические параметры, кроме невидимых d_1, theta_1)
+# Кандидаты на добавление
 CANDIDATE_PARAMS = [
-     "a_5", "d_5", "alpha_4", "alpha_2", "a_1", "a_2", "a_4", "alpha_3", "alpha_5",
-    "d_6",  "alpha_6", "a_3", "alpha_1"# "d_4", "a_6"
+    "d_5",  "alpha_4", "alpha_2", "a_1",
+        "alpha_1",
+    "alpha_3",
+    "alpha_5",
+    "a_3",
+    "a_4",
+    "a_5",
+    "d_6",     "theta_4",
+    "theta_5"    
 ]
-
 
 # Стадии прогона
 STAGES = [
@@ -67,8 +73,8 @@ def test_parameter_set(model: hayati_model.HayatiModel, train_dataset, val_datas
             return -999.0, False
             
     # Вывод промежуточных значений проходов для наглядности
-    #stages_str = " | ".join([f"Цикл {i+1}: {imp:+.4f}" for i, imp in enumerate(stage_improvements)])
-    #print(f"      -> {stages_str}")
+    # stages_str = " | ".join([f"Цикл {i+1}: {imp:+.4f}" for i, imp in enumerate(stage_improvements)])
+    # print(f"      -> {stages_str}")
 
     # Проверка устойчивости (Divergence Check) - ТЕПЕРЬ ДИНАМИЧЕСКАЯ
     if len(stage_improvements) < len(STAGES):
@@ -84,9 +90,25 @@ def test_parameter_set(model: hayati_model.HayatiModel, train_dataset, val_datas
         
     return final_imp, is_stable
 
-def run_forward_selection(model: hayati_model.HayatiModel, train_path: str, val_path: str):
+
+def _worker_evaluate_combo(args):
+    """
+    Функция-воркер для мультипроцессинга. Создает изолированную модель
+    и прогоняет тест для переданной комбинации.
+    """
+    combo, config_dict, train_dataset, val_dataset, base_params = args
+    
+    # Изоляция памяти: создаем свою модель для каждого процесса
+    local_model = hayati_model.HayatiModel(config_dict)
+    test_params = list(base_params) + list(combo)
+    
+    improvement, is_stable = test_parameter_set(local_model, train_dataset, val_dataset, test_params)
+    return combo, improvement, is_stable
+
+
+def run_forward_selection(config_dict: dict, model: hayati_model.HayatiModel, train_path: str, val_path: str):
     print("=" * 70)
-    print(" АЛГОРИТМ ПРЯМОГО ДОБАВЛЕНИЯ ПАРАМЕТРОВ (FORWARD SELECTION)")
+    print(" АЛГОРИТМ ПРЯМОГО ДОБАВЛЕНИЯ ПАРАМЕТРОВ (PARALLEL FORWARD SELECTION)")
     print("=" * 70)
 
     # 1. Загрузка датасетов
@@ -95,12 +117,10 @@ def run_forward_selection(model: hayati_model.HayatiModel, train_path: str, val_
     train_dataset[:, 7] /= 1000
 
     val_dataset = read_dataset(val_path, model.fieldnames_options["test_result"])
-    
     val_dataset[:, :6] *= DEG
     val_dataset[:, 6:] /= 1000
     
-    val_dataset = val_dataset[:-1, :]  # Убираем последнюю строку с суммарными результатами
-
+    #val_dataset = val_dataset[:-1, :]  # Убираем последнюю строку с суммарными результатами
 
     print(f"[*] Точек для калибровки (Train): {len(train_dataset)}")
     print(f"[*] Точек для валидации (Test):   {len(val_dataset)}\n")
@@ -124,31 +144,39 @@ def run_forward_selection(model: hayati_model.HayatiModel, train_path: str, val_
     best_params = list(current_params)
 
     # ==============================================================
-    # ФАЗА ПОЛНОГО ПЕРЕБОРА (EXHAUSTIVE SEARCH)
+    # ФАЗА ПОЛНОГО ПЕРЕБОРА (МНОГОПОТОЧНАЯ)
     # ==============================================================
-    print("-" * 70)
-    print(f" НАЧАЛО ПОЛНОГО ПЕРЕБОРА КОМБИНАЦИЙ (ИЗ {len(CANDIDATE_PARAMS)} ПАРАМЕТРОВ)")
-    print("-" * 70)
-
     total_combinations = (2 ** len(CANDIDATE_PARAMS)) - 1
-    current_iteration = 0
+    num_cores = cpu_count()
+    
+    print("-" * 70)
+    print(f" НАЧАЛО ПАРАЛЛЕЛЬНОГО ПЕРЕБОРА НА {num_cores} ЯДРАХ ({total_combinations} ВАРИАНТОВ)")
+    print("-" * 70)
 
+    # Подготавливаем все возможные комбинации
+    all_combos = []
     for r in range(1, len(CANDIDATE_PARAMS) + 1):
         for combo in itertools.combinations(CANDIDATE_PARAMS, r):
-            current_iteration += 1
-            test_params = list(BASE_PARAMS) + list(combo)
-            
-            print(f"[{current_iteration}/{total_combinations}] Пробуем добавить {list(combo)}...")
-            current_improvement, is_stable = test_parameter_set(model, train_dataset, val_dataset, test_params)
-            
-            if is_stable and current_improvement > best_improvement:
-                diff_gain = current_improvement - best_improvement
-                print(f"  [+] НОВЫЙ РЕКОРД! Новый diff: {current_improvement:+.4f} (Прирост: +{diff_gain:.4f} мм)\n")
-                best_params = list(test_params)
+            all_combos.append(combo)
+
+    # Упаковываем аргументы для воркеров
+    worker_args = [(combo, config_dict, train_dataset, val_dataset, BASE_PARAMS) for combo in all_combos]
+
+    completed = 0
+    # Используем imap_unordered для моментального вывода результатов по мере их готовности
+    with Pool(processes=num_cores) as pool:
+        for combo, current_improvement, is_stable in pool.imap_unordered(_worker_evaluate_combo, worker_args):
+            completed += 1
+
+            diff_gain = current_improvement - best_improvement
+            if is_stable and diff_gain > 0:
+                
+                print(f"[{completed}/{total_combinations}] [+] НОВЫЙ РЕКОРД! {list(combo)} | diff: {current_improvement:+.4f} (Прирост: +{diff_gain:.4f})")
+                best_params = list(BASE_PARAMS) + list(combo)
                 best_improvement = current_improvement
             else:
-                reason = "Нестабилен" if not is_stable else f"Ухудшил или не изменил diff ({current_improvement:+.4f})"
-                print(f"  [-] Отклонен. Причина: {reason}")
+                reason = "Нестабилен" if not is_stable else f"({current_improvement:+.4f})"
+                print(f"[{completed}/{total_combinations}] [-] Отклонен {list(combo)} | {reason}")
             
     print("=" * 70)
     print(" ФИНАЛЬНЫЙ РЕЗУЛЬТАТ ПОЛНОГО ПЕРЕБОРА")
@@ -167,6 +195,50 @@ if __name__ == "__main__":
 
     with open(args.config, 'r') as config_file:
         config = json.load(config_file)
+        
     model = hayati_model.HayatiModel(config)
     
-    run_forward_selection(model, args.dataset, args.validation)
+    # Передаем config в функцию, чтобы размножать его в потоках
+    run_forward_selection(config, model, args.dataset, args.validation)
+
+# [
+#     "beta_2",
+#     "beta_3",
+
+#     "theta_2",
+#     "theta_3",
+#     "theta_4",
+#     "theta_5",
+#     "theta_6",
+
+#     "alpha_3",
+#     "alpha_6",
+
+#     "a_1",
+#     "a_2",
+#     "a_3",
+#     "a_4",
+#     "d_5",
+#     "d_6"
+# ]
+
+# [
+#     "beta_2",
+#     "beta_3",
+
+#     "theta_2",
+#     "theta_3",
+#     "theta_4",
+#     "theta_5",
+#     "theta_6",
+
+#     "alpha_1",
+#     "alpha_3",
+#     "alpha_5",
+#     "alpha_6",
+#     "a_2",
+#     "a_3",
+#     "a_4",
+#     "a_5",
+#     "d_6"   
+# ]
