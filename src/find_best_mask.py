@@ -18,7 +18,7 @@ BASE_PARAMS = [
     "beta_3",
     "theta_2",
     "theta_3",
-
+    "a_6"
     "theta_6",
 
   
@@ -26,22 +26,29 @@ BASE_PARAMS = [
 
 # Кандидаты на добавление
 CANDIDATE_PARAMS = [
-    "d_5",  "alpha_4", "alpha_2", "a_1",
-        "alpha_1",
+    "alpha_1",
+    "alpha_2",
     "alpha_3",
+    "alpha_4", 
     "alpha_5",
+    "alpha_6"
+
+    "a_1",
+    "a_2"
     "a_3",
     "a_4",
     "a_5",
-    "d_6",     "theta_4",
+
+    "d_5", 
+    "d_6",
+
+    "theta_4",
     "theta_5"    
 ]
 
 # Стадии прогона
 STAGES = [
-    (1, False),
-    (2, False),
-    (3, False)
+    (1, False)
 ]
 
 def test_parameter_set(model: hayati_model.HayatiModel, train_dataset, val_dataset, current_params: List[str]) -> Tuple[float, bool]:
@@ -87,6 +94,7 @@ def test_parameter_set(model: hayati_model.HayatiModel, train_dataset, val_datas
     # Если улучшение сильно падает (на 0.15 мм) по сравнению с 1-м проходом или уходит в минус — это расходимость
     if final_imp < (pass_1 - 0.15) or final_imp < -0.5 or np.isnan(final_imp):
         is_stable = False
+        #spass
         
     return final_imp, is_stable
 
@@ -188,9 +196,9 @@ def run_forward_selection(config_dict: dict, model: hayati_model.HayatiModel, tr
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # Укажи здесь пути по умолчанию к твоим новым датасетам
-    parser.add_argument("-d", "--dataset", default="datasets/ARM95/wire/calibration/calibration_dataset_75_deg.csv")
+    parser.add_argument("-d", "--dataset", default="datasets/ARM95/wire/calibration/calibration_dataset_45_deg.csv")
     parser.add_argument("-v", "--validation", default="results/ARM95/validation_results_real.csv")
-    parser.add_argument("-c", "--config", default="src/config/ARM95_calibration_75_deg.json")
+    parser.add_argument("-c", "--config", default="src/config/ARM95_calibration_45_deg.json")
     args = parser.parse_args()
 
     with open(args.config, 'r') as config_file:
@@ -201,44 +209,4 @@ if __name__ == "__main__":
     # Передаем config в функцию, чтобы размножать его в потоках
     run_forward_selection(config, model, args.dataset, args.validation)
 
-# [
-#     "beta_2",
-#     "beta_3",
 
-#     "theta_2",
-#     "theta_3",
-#     "theta_4",
-#     "theta_5",
-#     "theta_6",
-
-#     "alpha_3",
-#     "alpha_6",
-
-#     "a_1",
-#     "a_2",
-#     "a_3",
-#     "a_4",
-#     "d_5",
-#     "d_6"
-# ]
-
-# [
-#     "beta_2",
-#     "beta_3",
-
-#     "theta_2",
-#     "theta_3",
-#     "theta_4",
-#     "theta_5",
-#     "theta_6",
-
-#     "alpha_1",
-#     "alpha_3",
-#     "alpha_5",
-#     "alpha_6",
-#     "a_2",
-#     "a_3",
-#     "a_4",
-#     "a_5",
-#     "d_6"   
-# ]
