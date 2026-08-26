@@ -3,7 +3,7 @@ import json
 import argparse
 import copy
 from typing import List, Tuple
-from calibration_wire import execute_calibration, validate_wire
+from calibration_wire import step_by_step_base_calibration, validate_wire
 import hayati_model
 from csv_routines import read_dataset
 from math_routines import DEG
@@ -43,7 +43,7 @@ def test_parameter_set(model: hayati_model.HayatiModel, train_dataset, val_subse
     
     for passes, polish in STAGES:
         try:
-            execute_calibration(model, dataset=train_dataset, is_real=1, passes=passes, polish=polish)
+            step_by_step_base_calibration(model, dataset=train_dataset, is_real=1, passes=passes, polish=polish)
             output = validate_wire(model, val_subset, 1)
             
             current_diff = output[-1, -1] * 1000
@@ -80,7 +80,7 @@ def run_auto_selection_and_test(model: hayati_model.HayatiModel, train_path: str
     full_val_dataset[:, 6:] /= 1000
 
     # 2. Случайное перемешивание и разделение (Shuffle & Split)
-    np.random.seed(42) # Фиксируем seed для стабильного сплита
+    np.random.seed() # Фиксируем seed для стабильного сплита
     indices = np.arange(len(full_val_dataset))
     np.random.shuffle(indices)
     
@@ -138,8 +138,8 @@ def run_auto_selection_and_test(model: hayati_model.HayatiModel, train_path: str
     model.reset_estimated_dh() 
     print("[*] Обучение модели (3 цикла + Полировка)...")
     # for passes in [1, 2, 3]:
-    #     execute_calibration(model, dataset=train_dataset, is_real=1, passes=passes, polish=False)
-    execute_calibration(model, dataset=train_dataset, is_real=1, passes=3, polish=True)
+    #     step_by_step_base_calibration(model, dataset=train_dataset, is_real=1, passes=passes, polish=False)
+    step_by_step_base_calibration(model, dataset=train_dataset, is_real=1, passes=3, polish=True)
        
     # Тестируем на 1-й половине (Псевдо-валидация)
     out_val = validate_wire(model, val_subset, 1)
@@ -172,9 +172,9 @@ def run_auto_selection_and_test(model: hayati_model.HayatiModel, train_path: str
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-d", "--dataset", default="datasets/ARM95/wire/calibration/calibration_dataset.csv")
+    parser.add_argument("-d", "--dataset", default="datasets/ARM95/wire/calibration/calibration_dataset_75_deg.csv")
     parser.add_argument("-v", "--validation", default="results/ARM95/validation_results_real.csv")
-    parser.add_argument("-c", "--config", default="src/config/ARM95_calibration.json")
+    parser.add_argument("-c", "--config", default="src/config/ARM95_calibration_75_deg.json")
     parser.add_argument("--split", type=float, default=0.5, help="Доля точек для отбора параметров (по умолчанию 0.5)")
     args = parser.parse_args()
 

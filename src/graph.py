@@ -287,7 +287,7 @@ def plot_calibration_errors_from_data(data, x_lim=0, y_lim=0):
               facecolor='white', fontsize=12, borderpad=0.8)
 
     plt.tight_layout()
-    plt.show()
+    
     
 
 def main():

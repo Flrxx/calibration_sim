@@ -46,8 +46,13 @@
   ],
 
   "zero_wire_angles":[
+    105.91, 5.16, 135.99, -51.15, 90.000, -15.91
+  ],
+
+  "back_zero_wire_angles":[
    66.92, -5.00, -136.26, 51.26, -90, 23.08
   ],
+
   "encoder_abs_tolerance_percent": 0.08,
   "encoder_resolution_mm": 0.05,  
   "generation_output": "datasets/ARM95/wire/generation/generation_output.csv",
@@ -67,13 +72,24 @@
     "d_1", "theta_1"],
 
   "calibration_mask":[
-    "alpha_6", 
-    "a_6", "d_6", "theta_5", "a_5", "alpha_5",  
-    "d_5", "alpha_4", "a_4", "theta_4",
-    "alpha_3", "a_3", "theta_3", "d_4",
-    "beta_3", "alpha_2", "a_2", "theta_2",
-    "beta_2", "alpha_1", "a_1"
-  ], 
+    "beta_3",
+    "theta_2",
+    "theta_3",
+    "a_4",
+    "alpha_3",
+    "a_2",
+    "beta_2",
+    "alpha_5",
+    "d_6",
+    "theta_6",
+    "theta_5",
+    "alpha_6",
+    "a_3",
+    "theta_4",
+    "alpha_1",
+    "a_6",
+    "a_5"
+], 
 
   "ignore_errors_list": [],
                   

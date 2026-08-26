@@ -810,10 +810,18 @@ def main(args):
             write_results(model)
             write_validation_dataset(model, args.is_real)
             write_validation_dataset(model, args.is_real, source_path="results/ARM95/validation_results_calib.csv")
-            data = read_dataset("results/ARM95/validation_results_real.csv", ['q1','q2','q3','q4','q5','q6','d_nom','d_est','d_encoder','diff'])
-            data = data[:-1, :]
+
+            model.change_zero_wire_angles(model.back_zero_wire_angles)  # Обновляем нулевую позицию фланца после калибровки
+            
+            write_validation_dataset(model, args.is_real, source_path="results/ARM95/validation_results_back.csv")
+            data_front = read_dataset("results/ARM95/validation_results_real.csv", ['q1','q2','q3','q4','q5','q6','d_nom','d_est','d_encoder','diff'])
+            data_back = read_dataset("results/ARM95/validation_results_back.csv", ['q1','q2','q3','q4','q5','q6','d_nom','d_est','d_encoder','diff'])
+            data_front = data_front[:-1, :]
+            data_back = data_back[:-1, :]
             if args.draw:
-                plot_calibration_errors_from_data(data)
+                plot_calibration_errors_from_data(data_front)
+                plot_calibration_errors_from_data(data_back)
+                plt.show()
         else:
             make_many_calibration_attempts(model, args.num_of_tries, args.generate,  args.passes, args.polish, args.draw)  # ,params_error
             

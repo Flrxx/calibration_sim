@@ -47,6 +47,7 @@ class HayatiModel:
 
         self.jac_DH_0 = None
         self.zero_wire_angles = np.array(config["zero_wire_angles"]) * DEG
+        self.back_zero_wire_angles = np.array(config["back_zero_wire_angles"]) * DEG
         self.zero_offset_nominal = self.get_transition_matrix(self.zero_wire_angles, "nominal")[0:3, 3]
         self.zero_offset_real = self.get_transition_matrix(self.zero_wire_angles, "real")[0:3, 3]
         
@@ -416,5 +417,17 @@ class HayatiModel:
             raise RuntimeError(f"Numerical IK solver failed: {result.message}")
             
         return result.x
+
+    def change_zero_wire_angles(self, new_zero_wire_angles):
+        self.zero_wire_angles = new_zero_wire_angles
+        self.zero_offset_nominal = self.get_transition_matrix(self.zero_wire_angles, "nominal")[0:3, 3]
+        self.zero_offset_real = self.get_transition_matrix(self.zero_wire_angles, "real")[0:3, 3]
+        
+        zero_wire_vec = -(self.get_transition_matrix(self.zero_wire_angles, "nominal")[:3, :3] @ np.eye(3))[:, 2]
+        norm = np.linalg.norm(zero_wire_vec)
+        if norm > 0:
+            self.zero_wire_direction = zero_wire_vec / norm
+        else:
+            self.zero_wire_direction = [None, None, None]
             
             
