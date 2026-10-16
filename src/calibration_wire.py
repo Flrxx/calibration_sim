@@ -729,14 +729,7 @@ def _calibrate_batch(model: hayati_model.HayatiModel, base_dataset: np.ndarray,
 def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: int, generate: bool, passes: int, polish: bool, draw: bool = False):
     num_cores = cpu_count()
     chunk_size = max(1, (tries_num // num_cores))
-
-    print("Загрузка датасетов...")
-    # 1. Загружаем датасет для кисти
-    # wrist_dataset = read_dataset(model.wrist_dataset, ["q1", "q2", "q3", "q4", "q5", "q6", "type", "block_condition_number"])
-    # wrist_dataset = np.array(wrist_dataset, dtype=object)
-    # wrist_dataset[:, 0:6] = wrist_dataset[:, 0:6].astype(float) * DEG
-    # mask = np.array([val not in EXTRA_POINTS for val in wrist_dataset[:, 6]])
-    # wrist_dataset = wrist_dataset[mask])
+    
     full_dataset = read_dataset(model.contribution_dataset, model.fieldnames_options["wire_contributions"])
     full_dataset = np.array(full_dataset, dtype=object)
     full_dataset[:, 0:6] = full_dataset[:, 0:6].astype(float) * DEG
@@ -755,7 +748,7 @@ def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: i
         if chunk_size > 0:
             tasks.append((model, base_dataset, chunk_size, generate, passes, polish)) #wrist_dataset   
   
-    print(f"Используется циклов (passes): {passes}")
+    print(f"Passes: {passes}")
     
     with Pool(processes=num_cores) as pool:
         results = pool.starmap(_calibrate_batch, tasks)
@@ -771,15 +764,13 @@ def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: i
     estimated_error_prev_median = sum(estimated_error_prev) / len(estimated_error_prev)
     params_error_median = np.sum(params_error, axis=0) / len(params_error)
 
-    print("\n" + "="*50)
-    print(" РЕЗУЛЬТАТЫ КАЛИБРОВКИ (в МИЛЛИМЕТРАХ)") 
-    print("="*50)
-    print(f"Nominal error (до калибровки):     {nominal_error_median:.4f} мм")
-    print(f"After calibration (после):         {estimated_error_median:.4f} мм")
-    print(f"Difference (Улучшение троса):      {(nominal_error_median - estimated_error_median):.4f} мм")
+    print("Calibration results:") 
+    print(f"Nominal error:     {nominal_error_median:.4f} мм")
+    print(f"After calibration:         {estimated_error_median:.4f} мм")
+    print(f"Difference:      {(nominal_error_median - estimated_error_median):.4f} мм")
     print("-" * 50)
 
-    print("\n--- Улучшение по каждому параметру ---")
+    print("\nImprovement by each parameter")
     for i, value in enumerate(params_error_median):
         print(f"{model.error_list[i]:>8}: {value:+.4f}")
 
@@ -790,12 +781,12 @@ def make_many_calibration_attempts(model: hayati_model.HayatiModel, tries_num: i
     norm_neg = np.linalg.norm(params_error_median[mask_negative]) if np.any(mask_negative) else 0.0
     
     score = (norm_pos - norm_neg) * 100
-    print(f"\nИтоговый Score (Эффективность параметров): {score:.3f}")
+    print(f"\nFinal Score: {score:.3f}")
 
-    if draw:
-        plot_side_by_side_hist(data_before, data_after)
-        plot_dh_comparison(np.abs(params_nom_error_median), np.abs(params_est_error_median))
-        plot_all_6_axes(data[:, 9:15], data[:, 15:])
+    # if draw:
+    #     plot_side_by_side_hist(data_before, data_after)
+    #     plot_dh_comparison(np.abs(params_nom_error_median), np.abs(params_est_error_median))
+    #     plot_all_6_axes(data[:, 9:15], data[:, 15:])
 
 def main(args):      
     with open(args.config, 'r') as config_file:
@@ -812,7 +803,6 @@ def main(args):
             write_validation_dataset(model, args.is_real, source_path="results/ARM95/validation_results_calib.csv")
 
             model.change_zero_wire_angles(model.back_zero_wire_angles)  # Обновляем нулевую позицию фланца после калибровки
-            
             write_validation_dataset(model, args.is_real, source_path="results/ARM95/validation_results_back.csv")
             data_front = read_dataset("results/ARM95/validation_results_real.csv", ['q1','q2','q3','q4','q5','q6','d_nom','d_est','d_encoder','diff'])
             data_back = read_dataset("results/ARM95/validation_results_back.csv", ['q1','q2','q3','q4','q5','q6','d_nom','d_est','d_encoder','diff'])
@@ -829,35 +819,20 @@ def main(args):
         rate_poses_contributions(model, args.target_param, args.num_of_tries, args.floor, args.passes, args.polish)
     elif args.mode == "cluster":
         cluster_and_visualize_poses(model, args.target_param, n_clusters=args.num_of_tries)
-
-    elif args.mode == "test":
-        validation_data = read_dataset("results/ARM95/validation_results.csv", ['q1','q2','q3','q4','q5','q6','d_nom','d_est','d_encoder','diff'])
-        calibration_data = read_dataset("datasets/ARM95/wire/calibration_dataset_full_29.05.csv", ['q1','q2','q3','q4','q5','q6','index','d'])
-        
-        validation_data[:, :6] *= DEG
-        validation_data[:, 6:] /= 1000
-
-        calibration_data[:, 0:6] *= DEG
-        calibration_data[:, 7] /= 1000
-        
-        combination, score = find_best_combination(model, calibration_data, validation_data)
-        print(f"Best combination: {combination}\n Score: {score:.3f}")
-    
     #print("Done")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", help="Name of .json configuration file. Default: src/config/ARM95_calibration.json", default="src/config/ARM95_calibration.json")
     parser.add_argument("-m", "--mode", help="calibration or rate", default="calibration")
+    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=1)
+    parser.add_argument("-p", "--passes", help="", type=int, default=1)
+    parser.add_argument("--polish", action='store_true')
     parser.add_argument("--generate", action='store_true')
     parser.add_argument("--is_real", action='store_true')
     parser.add_argument("--draw", action='store_true')
-    parser.add_argument("-n", "--num_of_tries", help="How many tries to make. Default: 1", type=int, default=1)
-    parser.add_argument("-i", "--i_target", help="", type=int, default=10)
     parser.add_argument("-f", "--floor", help="", type=float, default=0.001)
     parser.add_argument("-t", "--target_param", help="", type=str, default="a_6")
-    parser.add_argument("-p", "--passes", help="", type=int, default=1)
-    parser.add_argument("--polish", action='store_true')
 
     args = parser.parse_args()
     main(args)
