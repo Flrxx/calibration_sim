@@ -179,8 +179,7 @@ class HayatiModel:
         z_angle = acos(pose[:3, 2] @ [0, 0, 1])
         return (position[0] > self.cartesian_limits[0][0] and position[0] < self.cartesian_limits[0][1] and \
                 position[1] > self.cartesian_limits[1][0] and position[1] < self.cartesian_limits[1][1] and \
-                position[2] > self.cartesian_limits[2][0] and position[2] < self.cartesian_limits[2][1] and \
-                abs(z_angle) < self.max_z_angle)
+                position[2] > self.cartesian_limits[2][0] and position[2] < self.cartesian_limits[2][1] )
     
     def satisfies_wire_limits(self, angles_in, bounds: Union[np.ndarray, list], angle_limit: float, wire_limits: Union[np.ndarray, list]):
         

@@ -82,7 +82,7 @@ class JointJoysticks:
             width = 400
             height = 30
             joystick_i = LinearJoystick(x, y, width, height, [joysticks_limits_h[i], joysticks_limits_l[i]], i)
-            values = [14.945, 3.678, 136.696, -50.373, 90.000, -14.945]
+            values = [0, 0, 90, 0, 90.000, 0]
             joystick_i.value = values[i]
             joystick_i.update_knob_position_from_value()
             # if i == 0:
